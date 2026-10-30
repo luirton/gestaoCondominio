@@ -249,3 +249,36 @@ class FinanceiroCalculosTestCase(TestCase):
         totais = calcular_totais_periodo(self.periodo)
         self.assertEqual(totais["saldo_anterior_total"], Decimal("500.00"))
         self.assertEqual(totais["total_saldo_bancario"], Decimal("1200.00"))
+
+    def test_serializer_criar_periodo_com_saldos_contas_e_zeros(self):
+        from financeiro.serializers import PeriodoPrestacaoSerializer
+        conta = ContaBancaria.objects.create(
+            condominio=self.condominio,
+            banco_nome="Banco Inter",
+            tipo_conta=ContaBancaria.TipoConta.CORRENTE,
+            descricao="Inter CC Teste",
+        )
+        data = {
+            "condominio": self.condominio.id,
+            "mes_referencia": "2026-11-30",
+            "mes_referencia_rotulo": "NOVEMBRO/2026",
+            "data_vencimento": "2026-12-05",
+            "data_inicio_prestacao": "2026-11-01",
+            "data_fim_prestacao": "2026-11-30",
+            "valor_cota_padrao": "380.00",
+            "valor_vaga_padrao": "100.00",
+            "saldos_contas": [
+                {
+                    "conta": conta.id,
+                    "saldo_anterior": 0,
+                    "saldo_final": 0,
+                }
+            ]
+        }
+        serializer = PeriodoPrestacaoSerializer(data=data)
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        periodo = serializer.save()
+        self.assertEqual(periodo.saldos_contas.count(), 1)
+        saldo_conta = periodo.saldos_contas.first()
+        self.assertEqual(saldo_conta.saldo_anterior, Decimal("0.00"))
+        self.assertEqual(saldo_conta.saldo_final, Decimal("0.00"))

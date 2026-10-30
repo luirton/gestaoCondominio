@@ -38,6 +38,13 @@ class ContaBancariaSerializer(serializers.ModelSerializer):
 
 
 class PeriodoSaldoContaSerializer(serializers.ModelSerializer):
+    periodo = serializers.PrimaryKeyRelatedField(read_only=True)
+    saldo_anterior = serializers.DecimalField(
+        max_digits=14, decimal_places=2, required=False, default=Decimal("0.00"), allow_null=True
+    )
+    saldo_final = serializers.DecimalField(
+        max_digits=14, decimal_places=2, required=False, default=Decimal("0.00"), allow_null=True
+    )
     conta_descricao = serializers.CharField(source="conta.descricao", read_only=True)
     conta_banco = serializers.CharField(source="conta.banco_nome", read_only=True)
     conta_tipo = serializers.CharField(source="conta.tipo_conta", read_only=True)
@@ -56,6 +63,14 @@ class PeriodoSaldoContaSerializer(serializers.ModelSerializer):
             "saldo_anterior",
             "saldo_final",
         ]
+
+    def to_internal_value(self, data):
+        data_copy = data.copy() if hasattr(data, "copy") else dict(data)
+        for field in ["saldo_anterior", "saldo_final"]:
+            val = data_copy.get(field)
+            if val is None or val == "" or val == "null":
+                data_copy[field] = Decimal("0.00")
+        return super().to_internal_value(data_copy)
 
 
 class ReceitaCotaSerializer(serializers.ModelSerializer):
@@ -253,13 +268,17 @@ class PeriodoPrestacaoSerializer(serializers.ModelSerializer):
         return attrs
 
     def create(self, validated_data):
-        saldos_data = self.initial_data.get("saldos_contas", [])
+        saldos_data = validated_data.pop("saldos_contas", None)
+        if saldos_data is None and "saldos_contas" in self.initial_data:
+            saldos_data = self.initial_data.get("saldos_contas", [])
         periodo = super().create(validated_data)
         self._sync_saldos_contas(periodo, saldos_data)
         return periodo
 
     def update(self, instance, validated_data):
-        saldos_data = self.initial_data.get("saldos_contas", None)
+        saldos_data = validated_data.pop("saldos_contas", None)
+        if saldos_data is None and "saldos_contas" in self.initial_data:
+            saldos_data = self.initial_data.get("saldos_contas")
         periodo = super().update(instance, validated_data)
         if saldos_data is not None:
             self._sync_saldos_contas(periodo, saldos_data)
@@ -271,11 +290,19 @@ class PeriodoPrestacaoSerializer(serializers.ModelSerializer):
         total_saldo_anterior = Decimal("0.00")
         total_saldo_bancario = Decimal("0.00")
         for item in saldos_data:
-            conta_id = item.get("conta") or item.get("conta_id")
+            if hasattr(item, "get"):
+                conta_val = item.get("conta") or item.get("conta_id")
+                conta_id = getattr(conta_val, "id", conta_val)
+                raw_ant = item.get("saldo_anterior")
+                raw_fin = item.get("saldo_final")
+                saldo_ant = Decimal(str(raw_ant if raw_ant not in [None, ""] else 0))
+                saldo_fin = Decimal(str(raw_fin if raw_fin not in [None, ""] else 0))
+            else:
+                continue
+
             if not conta_id:
                 continue
-            saldo_ant = Decimal(str(item.get("saldo_anterior") or 0))
-            saldo_fin = Decimal(str(item.get("saldo_final") or 0))
+
             PeriodoSaldoConta.objects.update_or_create(
                 periodo=periodo,
                 conta_id=conta_id,

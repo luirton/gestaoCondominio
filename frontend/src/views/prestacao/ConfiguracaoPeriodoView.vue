@@ -810,14 +810,19 @@ async function savePeriodo() {
   saving.value = true
   errorMessage.value = ""
 
-  // Prepara payload com master-detail saldos_contas
+  // Prepara payload com master-detail saldos_contas garantindo valor 0 se não informado
   const payload = {
     ...form.value,
-    total_saldo_bancario: totalSaldoFinalCalculado.value,
+    total_saldo_bancario: Number(totalSaldoFinalCalculado.value) || 0,
+    saldo_anterior_cc: Number(form.value.saldo_anterior_cc) || 0,
+    saldo_anterior_aplicacao: Number(form.value.saldo_anterior_aplicacao) || 0,
+    saldo_anterior_porquinho: Number(form.value.saldo_anterior_porquinho) || 0,
+    valor_cota_padrao: Number(form.value.valor_cota_padrao) || 0,
+    valor_vaga_padrao: Number(form.value.valor_vaga_padrao) || 0,
     saldos_contas: saldosContasForm.value.map(s => ({
       conta: s.conta,
-      saldo_anterior: s.saldo_anterior,
-      saldo_final: s.saldo_final,
+      saldo_anterior: Number(s.saldo_anterior) || 0,
+      saldo_final: Number(s.saldo_final) || 0,
     })),
   }
 
@@ -831,7 +836,15 @@ async function savePeriodo() {
     await loadPeriodos()
   } catch (err) {
     const data = err.response?.data
-    errorMessage.value = typeof data === "object" ? JSON.stringify(data) : "Erro ao salvar período."
+    if (typeof data === "object") {
+      const msgs = []
+      for (const [k, v] of Object.entries(data)) {
+        msgs.push(`${k}: ${typeof v === "object" ? JSON.stringify(v) : v}`)
+      }
+      errorMessage.value = msgs.join(" | ")
+    } else {
+      errorMessage.value = "Erro ao salvar período."
+    }
   } finally {
     saving.value = false
   }

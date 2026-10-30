@@ -72,10 +72,13 @@ class PeriodoPrestacao(TimeStampedModel):
     )
     mes_prox_vencimento = models.CharField(
         max_length=50,
+        blank=True,
         default="OUTUBRO",
         verbose_name="Mês Próx. Vencimento"
     )
     data_prox_vencimento = models.DateField(
+        null=True,
+        blank=True,
         verbose_name="Data Próx. Vencimento",
         help_text="Ex: 2026-11-05"
     )
