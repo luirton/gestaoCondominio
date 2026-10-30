@@ -1,0 +1,863 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CondoGestão - Super Painel Administrativo Global</title>
+  <!-- Tailwind CSS CDN para ser 100% autônomo e sem necessidade de npm build -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Vue 3 CDN -->
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <!-- Axios CDN -->
+  <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Inter', sans-serif; }
+    code, pre, .font-mono { font-family: 'JetBrains Mono', monospace; }
+    [v-cloak] { display: none; }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen">
+  <div id="app" v-cloak class="min-h-screen flex flex-col">
+    
+    <!-- TELA DE LOGIN MASTER SE NÃO ESTIVER AUTENTICADO -->
+    <div v-if="!token" class="flex-1 flex items-center justify-center p-4">
+      <div class="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl relative overflow-hidden">
+        <div class="absolute -top-24 -right-24 w-48 h-48 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none"></div>
+        <div class="flex items-center space-x-3 mb-6">
+          <div class="w-12 h-12 rounded-2xl bg-emerald-600 flex items-center justify-center font-black text-xl text-white shadow-lg shadow-emerald-500/30">
+            ⚡
+          </div>
+          <div>
+            <h1 class="text-xl font-bold text-white tracking-tight">Super Painel Global</h1>
+            <p class="text-xs text-slate-400">Acesso Irrestrito / Root Manager</p>
+          </div>
+        </div>
+
+        <div v-if="loginError" class="mb-4 p-3 rounded-xl bg-rose-950/70 border border-rose-800 text-rose-300 text-xs flex items-center">
+          <span class="mr-2">⚠️</span> {{ loginError }}
+        </div>
+
+        <form @submit.prevent="handleLogin" class="space-y-4 text-xs">
+          <div>
+            <label class="block font-medium text-slate-300 mb-1">Superusuário / Login *</label>
+            <input v-model="loginForm.username" required type="text" placeholder="admin" class="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white focus:outline-none focus:border-emerald-500 text-sm font-medium" />
+          </div>
+          <div>
+            <label class="block font-medium text-slate-300 mb-1">Senha *</label>
+            <input v-model="loginForm.password" required type="password" placeholder="••••••••" class="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white focus:outline-none focus:border-emerald-500 text-sm font-medium" />
+          </div>
+          <button type="submit" :disabled="loading" class="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl shadow-lg shadow-emerald-600/30 transition disabled:opacity-50">
+            {{ loading ? 'Autenticando...' : 'Acessar Console Master' }}
+          </button>
+        </form>
+
+        <div class="mt-6 pt-5 border-t border-slate-800 text-center">
+          <button @click="fillAdmin" type="button" class="text-xs text-emerald-400 hover:underline">
+            Preencher credenciais padrão (admin / admin123)
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- CONSOLE ADMINISTRATIVO GLOBAL QUANDO AUTENTICADO -->
+    <div v-else class="flex-1 flex flex-col min-h-screen">
+      <!-- HEADER GLOBAL -->
+      <header class="bg-slate-900 border-b border-slate-800 px-6 py-4 flex flex-wrap items-center justify-between gap-4 sticky top-0 z-40 backdrop-blur-md bg-slate-900/90">
+        <div class="flex items-center space-x-3">
+          <div class="w-9 h-9 rounded-xl bg-emerald-600 flex items-center justify-center font-bold text-white shadow-lg shadow-emerald-500/20">
+            ⚡
+          </div>
+          <div>
+            <div class="flex items-center space-x-2">
+              <span class="font-extrabold text-base tracking-tight text-white">Super Painel Global</span>
+              <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 uppercase tracking-wider">
+                Sem Restrição de Escopo
+              </span>
+            </div>
+            <p class="text-xs text-slate-400">Visão irrestrita de todos os condomínios, pessoas, unidades e segurança</p>
+          </div>
+        </div>
+
+        <div class="flex items-center space-x-4">
+          <!-- Filtro Opcional de Condomínio -->
+          <div class="flex items-center space-x-2 bg-slate-950 px-3 py-1.5 rounded-xl border border-slate-800">
+            <span class="text-xs text-slate-400">🏢 Filtrar por:</span>
+            <select v-model="filterCondominioId" @change="onFilterChange" class="bg-transparent text-xs text-slate-200 font-semibold focus:outline-none">
+              <option value="" class="bg-slate-900">TODOS OS CONDOMÍNIOS (Global)</option>
+              <option v-for="c in condominiosList" :key="c.id" :value="c.id" class="bg-slate-900">{{ c.nome }} (ID: {{ c.id }})</option>
+            </select>
+          </div>
+
+          <div class="text-right text-xs">
+            <span class="font-semibold text-white">{{ user?.username }}</span>
+            <span class="text-emerald-400 block font-mono text-[11px]">{{ user?.is_superuser ? 'ROOT / SUPERUSER' : 'USUÁRIO' }}</span>
+          </div>
+
+          <button @click="logout" class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-rose-950 text-slate-300 hover:text-rose-300 border border-slate-700 text-xs font-semibold transition">
+            Sair
+          </button>
+        </div>
+      </header>
+
+      <!-- BARRA DE NAVEGAÇÃO DE MÓDULOS -->
+      <nav class="bg-slate-900/60 border-b border-slate-800/80 px-6 py-2.5 flex items-center space-x-2 overflow-x-auto text-xs">
+        <button 
+          v-for="tab in tabs" 
+          :key="tab.id"
+          @click="activeTab = tab.id; loadData()"
+          :class="activeTab === tab.id ? 'bg-emerald-600 text-white font-bold shadow' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'"
+          class="px-3.5 py-1.5 rounded-xl transition flex items-center space-x-2 shrink-0"
+        >
+          <span>{{ tab.icon }}</span>
+          <span>{{ tab.label }}</span>
+          <span v-if="counts[tab.id] !== undefined" class="ml-1.5 px-1.5 py-0.2 rounded-full text-[10px]" :class="activeTab === tab.id ? 'bg-emerald-800/80 text-emerald-100' : 'bg-slate-800 text-slate-400'">
+            {{ counts[tab.id] }}
+          </span>
+        </button>
+      </nav>
+
+      <!-- ÁREA DE CONTEÚDO PRINCIPAL -->
+      <main class="flex-1 p-6 max-w-7xl w-full mx-auto space-y-6">
+        
+        <!-- Feedback Alertas -->
+        <div v-if="globalMsg" :class="globalMsgType === 'error' ? 'bg-rose-950/80 border-rose-800 text-rose-300' : 'bg-emerald-950/80 border-emerald-800 text-emerald-300'" class="p-4 rounded-2xl border text-xs flex items-center justify-between shadow-lg">
+          <div class="flex items-center space-x-2">
+            <span>{{ globalMsgType === 'error' ? '⚠️' : '✅' }}</span>
+            <span>{{ globalMsg }}</span>
+          </div>
+          <button @click="globalMsg = ''" class="text-sm font-bold ml-4">&times;</button>
+        </div>
+
+        <!-- BARRA DE AÇÕES DO MÓDULO ATIVO -->
+        <div class="flex flex-col sm:flex-row items-center justify-between gap-4 bg-slate-900 border border-slate-800 p-4 rounded-2xl">
+          <div class="flex items-center space-x-3 w-full sm:w-auto">
+            <input 
+              v-model="searchQuery" 
+              @input="loadData"
+              type="text" 
+              :placeholder="'Buscar em ' + currentTabName + '...'" 
+              class="px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 w-full sm:w-72"
+            />
+            <button @click="loadData" class="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold">
+              Recarregar
+            </button>
+          </div>
+
+          <div class="flex items-center space-x-3">
+            <span class="text-xs text-slate-400 font-mono">Total no módulo: {{ items.length }}</span>
+            <button 
+              @click="openModal()" 
+              class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs shadow-lg shadow-emerald-600/20 transition flex items-center space-x-1"
+            >
+              <span>+</span>
+              <span>Cadastrar Novo</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- TABELA DE DADOS -->
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr class="bg-slate-950/80 border-b border-slate-800 text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
+                  <th v-for="col in currentColumns" :key="col.key" class="p-3.5">{{ col.label }}</th>
+                  <th class="p-3.5 text-right">Ações</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-800/60 text-slate-300">
+                <tr v-if="loading" class="text-center">
+                  <td :colspan="currentColumns.length + 1" class="p-10 text-slate-500">
+                    <span class="animate-pulse">Carregando registros sem restrição...</span>
+                  </td>
+                </tr>
+                <tr v-else-if="items.length === 0" class="text-center">
+                  <td :colspan="currentColumns.length + 1" class="p-10 text-slate-500">
+                    Nenhum registro encontrado neste módulo.
+                  </td>
+                </tr>
+                <tr v-for="item in items" :key="item.id" class="hover:bg-slate-800/40 transition">
+                  <td v-for="col in currentColumns" :key="col.key" class="p-3.5">
+                    <!-- Formatadores customizados -->
+                    <template v-if="col.key === 'status' || col.key === 'ativo' || col.key === 'is_active'">
+                      <span :class="item[col.key] !== false ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' : 'bg-rose-500/10 text-rose-400 border-rose-500/30'" class="px-2 py-0.5 rounded-full border text-[10px] font-bold">
+                        {{ item[col.key] !== false ? 'Ativo' : 'Inativo' }}
+                      </span>
+                    </template>
+                    <template v-else-if="col.key === 'responsavel'">
+                      <span v-if="item.responsavel" class="px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/30 font-bold text-[10px]">
+                        ★ Sim
+                      </span>
+                      <span v-else class="text-slate-500">Não</span>
+                    </template>
+                    <template v-else-if="col.key === 'fracao_ideal'">
+                      <span class="font-mono text-blue-400 font-medium">{{ item.fracao_ideal || '—' }}</span>
+                    </template>
+                    <template v-else>
+                      <span :class="col.fontBold ? 'font-bold text-white' : ''">{{ item[col.key] ?? '—' }}</span>
+                    </template>
+                  </td>
+                  <td class="p-3.5 text-right space-x-2">
+                    <button @click="openModal(item)" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-medium transition">
+                      Editar
+                    </button>
+                    <button @click="deleteItem(item)" class="px-2.5 py-1 rounded-lg bg-rose-950/60 hover:bg-rose-900 text-rose-300 border border-rose-800/60 text-[11px] font-medium transition">
+                      Excluir
+                    </button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </main>
+
+      <!-- MODAL DE CADASTRO/EDIÇÃO GENÉRICO DINÂMICO -->
+      <div v-if="showModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+        <div class="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
+          <div class="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-950">
+            <h3 class="font-bold text-sm text-white">
+              {{ isEditing ? 'Editar ' + currentTabName : 'Novo ' + currentTabName }} (Acesso Irrestrito)
+            </h3>
+            <button @click="showModal = false" class="text-slate-400 hover:text-white text-lg font-bold">&times;</button>
+          </div>
+
+          <!-- Erro DENTRO do Modal -->
+          <div v-if="modalError" class="m-5 mb-0 p-3 rounded-xl bg-rose-950 border border-rose-800 text-rose-300 text-xs">
+            ⚠️ {{ modalError }}
+          </div>
+
+          <form @submit.prevent="saveForm" class="p-5 space-y-4 text-xs overflow-y-auto flex-1">
+            
+            <!-- CAMPOS DINÂMICOS CONFORME A TAB ATIVA -->
+            
+            <!-- 1. CONDOMÍNIOS -->
+            <template v-if="activeTab === 'condominios'">
+              <div>
+                <label class="block font-medium text-slate-300 mb-1">Nome do Condomínio *</label>
+                <input v-model="form.nome" required type="text" class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white focus:outline-none focus:border-emerald-500" />
+              </div>
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="block font-medium text-slate-300 mb-1">CNPJ</label>
+                  <input v-model="form.cnpj" type="text" placeholder="00.000.000/0000-00" class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white font-mono" />
+                </div>
+                <div>
+                  <label class="block font-medium text-slate-300 mb-1">CEP</label>
+                  <input v-model="form.cep" type="text" placeholder="00000-000" class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white font-mono" />
+                </div>
+              </div>
+              <div class="grid grid-cols-3 gap-3">
+                <div class="col-span-2">
+                  <label class="block font-medium text-slate-300 mb-1">Endereço *</label>
+                  <input v-model="form.endereco" required type="text" class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white" />
+                </div>
+                <div>
+                  <label class="block font-medium text-slate-300 mb-1">Número</label>
+                  <input v-model="form.numero" type="text" class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white" />
+                </div>
+              </div>
+              <div class="grid grid-cols-3 gap-3">
+                <div>
+                  <label class="block font-medium text-slate-300 mb-1">Complemento</label>
+                  <input v-model="form.complemento" type="text" class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white" />
+                </div>
+                <div>
+                  <label class="block font-medium text-slate-300 mb-1">Cidade</label>
+                  <input v-model="form.cidade" type="text" class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white" />
+                </div>
+                <div>
+                  <label class="block font-medium text-slate-300 mb-1">UF</label>
+                  <input v-model="form.uf" maxlength="2" type="text" class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white uppercase font-mono" />
+                </div>
+              </div>
+              <div class="flex items-center space-x-2 pt-1">
+                <input id="condAtivo" v-model="form.ativo" type="checkbox" class="rounded border-slate-700 text-emerald-600 focus:ring-emerald-500" />
+                <label for="condAtivo" class="text-slate-300">Condomínio Ativo</label>
+              </div>
+            </template>
+
+            <!-- 2. UNIDADES -->
+            <template v-else-if="activeTab === 'unidades'">
+              <div>
+                <label class="block font-medium text-slate-300 mb-1">Condomínio *</label>
+                <select v-model="form.condominio" required class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white">
+                  <option v-for="c in condominiosList" :key="c.id" :value="c.id">{{ c.nome }}</option>
+                </select>
+              </div>
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="block font-medium text-slate-300 mb-1">Identificador (ex: Apto 101) *</label>
+                  <input v-model="form.identificador" required type="text" class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white uppercase" />
+                </div>
+                <div>
+                  <label class="block font-medium text-slate-300 mb-1">Bloco / Torre</label>
+                  <input v-model="form.bloco_torre" type="text" placeholder="Torre A" class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white uppercase" />
+                </div>
+              </div>
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="block font-medium text-slate-300 mb-1">Fração Ideal (Rateio Financeiro)</label>
+                  <input v-model="form.fracao_ideal" step="0.000001" type="number" placeholder="0.025000" class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white font-mono" />
+                </div>
+                <div>
+                  <label class="block font-medium text-slate-300 mb-1">Área Privativa (m²)</label>
+                  <input v-model="form.area_privativa" step="0.01" type="number" placeholder="85.50" class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white font-mono" />
+                </div>
+              </div>
+              <div>
+                <label class="block font-medium text-slate-300 mb-1">Observações</label>
+                <textarea v-model="form.observacoes" rows="2" class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white"></textarea>
+              </div>
+            </template>
+
+            <!-- 3. PESSOAS -->
+            <template v-else-if="activeTab === 'pessoas'">
+              <div>
+                <label class="block font-medium text-slate-300 mb-1">Nome Completo *</label>
+                <input v-model="form.nome" required type="text" class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white" />
+              </div>
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="block font-medium text-slate-300 mb-1">CPF</label>
+                  <input v-model="form.cpf" type="text" placeholder="000.000.000-00" class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white font-mono" />
+                </div>
+                <div>
+                  <label class="block font-medium text-slate-300 mb-1">Telefone / Celular</label>
+                  <input v-model="form.telefone" type="text" placeholder="(11) 99999-9999" class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white font-mono" />
+                </div>
+              </div>
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="block font-medium text-slate-300 mb-1">E-mail</label>
+                  <input v-model="form.email" type="email" placeholder="email@dominio.com" class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white" />
+                </div>
+                <div>
+                  <label class="block font-medium text-slate-300 mb-1">Data de Nascimento</label>
+                  <input v-model="form.data_nascimento" type="date" class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white" />
+                </div>
+              </div>
+            </template>
+
+            <!-- 4. VÍNCULOS UNIDADE -->
+            <template v-else-if="activeTab === 'vinculos-unidade'">
+              <div>
+                <label class="block font-medium text-slate-300 mb-1">Pessoa *</label>
+                <select v-model="form.pessoa" required class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white">
+                  <option v-for="p in pessoasList" :key="p.id" :value="p.id">{{ p.nome }} (CPF: {{ p.cpf || 'Sem' }})</option>
+                </select>
+              </div>
+              <div>
+                <label class="block font-medium text-slate-300 mb-1">Unidade *</label>
+                <select v-model="form.unidade" required class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white">
+                  <option v-for="u in unidadesList" :key="u.id" :value="u.id">{{ u.identificador }} ({{ u.condominio_nome }})</option>
+                </select>
+              </div>
+              <div>
+                <label class="block font-medium text-slate-300 mb-1">Tipo de Vínculo *</label>
+                <select v-model="form.tipo" required class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white">
+                  <option value="PROPRIETARIO">Proprietário</option>
+                  <option value="INQUILINO">Inquilino</option>
+                  <option value="MORADOR">Morador / Dependente</option>
+                  <option value="OUTRO">Outro</option>
+                </select>
+              </div>
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="block font-medium text-slate-300 mb-1">Data Início *</label>
+                  <input v-model="form.data_inicio" required type="date" class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white" />
+                </div>
+                <div>
+                  <label class="block font-medium text-slate-300 mb-1">Data Fim (em branco se ativo)</label>
+                  <input v-model="form.data_fim" type="date" class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white" />
+                </div>
+              </div>
+              <div class="flex items-center space-x-2 pt-1">
+                <input id="vincResp" v-model="form.responsavel" type="checkbox" class="rounded border-slate-700 text-emerald-600 focus:ring-emerald-500" />
+                <label for="vincResp" class="text-amber-300 font-bold">Responsável Financeiro/Legal da Unidade</label>
+              </div>
+            </template>
+
+            <!-- 5. FUNCIONÁRIOS -->
+            <template v-else-if="activeTab === 'funcionarios'">
+              <div>
+                <label class="block font-medium text-slate-300 mb-1">Pessoa *</label>
+                <select v-model="form.pessoa" required class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white">
+                  <option v-for="p in pessoasList" :key="p.id" :value="p.id">{{ p.nome }}</option>
+                </select>
+              </div>
+              <div>
+                <label class="block font-medium text-slate-300 mb-1">Condomínio *</label>
+                <select v-model="form.condominio" required class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white">
+                  <option v-for="c in condominiosList" :key="c.id" :value="c.id">{{ c.nome }}</option>
+                </select>
+              </div>
+              <div>
+                <label class="block font-medium text-slate-300 mb-1">Cargo *</label>
+                <select v-model="form.cargo" required class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white">
+                  <option value="ZELADOR">Zelador(a)</option>
+                  <option value="PORTEIRO">Porteiro(a)</option>
+                  <option value="SERVICOS_GERAIS">Serviços Gerais</option>
+                  <option value="MANUTENCAO">Manutenção</option>
+                  <option value="ADMINISTRATIVO">Administrativo</option>
+                  <option value="OUTRO">Outro</option>
+                </select>
+              </div>
+              <div>
+                <label class="block font-medium text-slate-300 mb-1">Endereço Residencial Próprio *</label>
+                <textarea v-model="form.endereco_proprio" required rows="2" class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white"></textarea>
+              </div>
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="block font-medium text-slate-300 mb-1">Data Admissão *</label>
+                  <input v-model="form.data_admissao" required type="date" class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white" />
+                </div>
+                <div>
+                  <label class="block font-medium text-slate-300 mb-1">Data Demissão</label>
+                  <input v-model="form.data_demissao" type="date" class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white" />
+                </div>
+              </div>
+              <div class="flex items-center space-x-2 pt-1">
+                <input id="funcAtivo" v-model="form.ativo" type="checkbox" class="rounded border-slate-700 text-emerald-600 focus:ring-emerald-500" />
+                <label for="funcAtivo" class="text-slate-300 font-medium">Contrato Ativo</label>
+              </div>
+            </template>
+
+            <!-- 6. MANDATOS E CARGOS -->
+            <template v-else-if="activeTab === 'cargos-condominiais'">
+              <div>
+                <label class="block font-medium text-slate-300 mb-1">Pessoa Eleita *</label>
+                <select v-model="form.pessoa" required class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white">
+                  <option v-for="p in pessoasList" :key="p.id" :value="p.id">{{ p.nome }}</option>
+                </select>
+              </div>
+              <div>
+                <label class="block font-medium text-slate-300 mb-1">Condomínio *</label>
+                <select v-model="form.condominio" required class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white">
+                  <option v-for="c in condominiosList" :key="c.id" :value="c.id">{{ c.nome }}</option>
+                </select>
+              </div>
+              <div>
+                <label class="block font-medium text-slate-300 mb-1">Cargo *</label>
+                <select v-model="form.cargo" required class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white">
+                  <option value="SINDICO">Síndico(a)</option>
+                  <option value="SUBSINDICO">Subsíndico(a)</option>
+                  <option value="CONSELHEIRO_FISCAL">Conselheiro Fiscal</option>
+                  <option value="CONSELHEIRO_CONSULTIVO">Conselheiro Consultivo</option>
+                  <option value="OUTRO">Outro</option>
+                </select>
+              </div>
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="block font-medium text-slate-300 mb-1">Início do Mandato *</label>
+                  <input v-model="form.data_inicio" required type="date" class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white" />
+                </div>
+                <div>
+                  <label class="block font-medium text-slate-300 mb-1">Fim do Mandato</label>
+                  <input v-model="form.data_fim" type="date" class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white" />
+                </div>
+              </div>
+              <div class="flex items-center space-x-2 pt-1">
+                <input id="mandAtivo" v-model="form.ativo" type="checkbox" class="rounded border-slate-700 text-emerald-600 focus:ring-emerald-500" />
+                <label for="mandAtivo" class="text-slate-300 font-medium">Mandato Ativo</label>
+              </div>
+            </template>
+
+            <!-- 7. USUÁRIOS E SEGURANÇA -->
+            <template v-else-if="activeTab === 'usuarios'">
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="block font-medium text-slate-300 mb-1">Login (Username) *</label>
+                  <input v-model="form.username" required type="text" class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white" />
+                </div>
+                <div>
+                  <label class="block font-medium text-slate-300 mb-1">E-mail</label>
+                  <input v-model="form.email" type="email" class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white" />
+                </div>
+              </div>
+              <div>
+                <label class="block font-medium text-slate-300 mb-1">
+                  {{ isEditing ? 'Alterar Senha (deixe vazio para manter)' : 'Senha de Acesso *' }}
+                </label>
+                <input v-model="form.password" :required="!isEditing" type="password" placeholder="••••••••" class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white" />
+              </div>
+              <div>
+                <label class="block font-medium text-slate-300 mb-1">Vincular Pessoa Física (Opcional)</label>
+                <select v-model="form.pessoa" class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white">
+                  <option :value="null">Nenhuma (Usuário puramente administrativo)</option>
+                  <option v-for="p in pessoasList" :key="p.id" :value="p.id">{{ p.nome }} ({{ p.cpf || 'Sem CPF' }})</option>
+                </select>
+              </div>
+              <div class="grid grid-cols-3 gap-2 pt-1">
+                <label class="flex items-center space-x-2 text-slate-300">
+                  <input v-model="form.is_active" type="checkbox" class="rounded border-slate-700 text-emerald-600" />
+                  <span>Ativo</span>
+                </label>
+                <label class="flex items-center space-x-2 text-slate-300">
+                  <input v-model="form.is_staff" type="checkbox" class="rounded border-slate-700 text-emerald-600" />
+                  <span>Staff</span>
+                </label>
+                <label class="flex items-center space-x-2 text-amber-300 font-bold">
+                  <input v-model="form.is_superuser" type="checkbox" class="rounded border-slate-700 text-amber-500" />
+                  <span>Superuser</span>
+                </label>
+              </div>
+            </template>
+
+            <!-- 8. VÍNCULOS USUÁRIO-CONDOMÍNIO -->
+            <template v-else-if="activeTab === 'usuarios-condominios'">
+              <div>
+                <label class="block font-medium text-slate-300 mb-1">Usuário *</label>
+                <select v-model="form.usuario" required class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white">
+                  <option v-for="u in usuariosList" :key="u.id" :value="u.id">{{ u.username }} ({{ u.email || 'sem email' }})</option>
+                </select>
+              </div>
+              <div>
+                <label class="block font-medium text-slate-300 mb-1">Condomínio *</label>
+                <select v-model="form.condominio" required class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white">
+                  <option v-for="c in condominiosList" :key="c.id" :value="c.id">{{ c.nome }}</option>
+                </select>
+              </div>
+              <div>
+                <label class="block font-medium text-slate-300 mb-1">Perfil de Acesso *</label>
+                <select v-model="form.perfil" required class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white">
+                  <option value="SINDICO">Síndico (Acesso Total)</option>
+                  <option value="SUBSINDICO">Subsíndico</option>
+                  <option value="CONSELHEIRO">Conselheiro</option>
+                  <option value="CONDOMINO">Condômino</option>
+                  <option value="FUNCIONARIO">Funcionário</option>
+                </select>
+              </div>
+              <div class="flex items-center space-x-2 pt-1">
+                <input id="ucAtivo" v-model="form.ativo" type="checkbox" class="rounded border-slate-700 text-emerald-600 focus:ring-emerald-500" />
+                <label for="ucAtivo" class="text-slate-300 font-medium">Vínculo Ativo</label>
+              </div>
+            </template>
+
+            <div class="pt-4 border-t border-slate-800 flex justify-end space-x-2 sticky bottom-0 bg-slate-900">
+              <button type="button" @click="showModal = false" class="px-4 py-2 border border-slate-700 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition">
+                Cancelar
+              </button>
+              <button type="submit" :disabled="saving" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl transition shadow-lg shadow-emerald-600/30">
+                {{ saving ? 'Gravando...' : 'Salvar no Banco' }}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    const { createApp, ref, computed, onMounted } = Vue
+
+    createApp({
+      setup() {
+        const API_URL = "http://127.0.0.1:8000/api"
+        const token = ref(localStorage.getItem("admin_root_token") || "")
+        const user = ref(JSON.parse(localStorage.getItem("admin_root_user") || "null"))
+        const loading = ref(false)
+        const saving = ref(false)
+        const globalMsg = ref("")
+        const globalMsgType = ref("success")
+        const modalError = ref("")
+        const searchQuery = ref("")
+        const filterCondominioId = ref("")
+
+        const loginForm = ref({ username: "admin", password: "admin123" })
+        const loginError = ref("")
+
+        const activeTab = ref("condominios")
+        const items = ref([])
+        const counts = ref({})
+
+        // Dados auxiliares para combos
+        const condominiosList = ref([])
+        const pessoasList = ref([])
+        const unidadesList = ref([])
+        const usuariosList = ref([])
+
+        const tabs = [
+          { id: "condominios", label: "Condomínios", icon: "🏢" },
+          { id: "unidades", label: "Unidades Habitacionais", icon: "🚪" },
+          { id: "pessoas", label: "Pessoas (Base Civil)", icon: "👥" },
+          { id: "vinculos-unidade", label: "Vínculos Unidade/Responsáveis", icon: "🔗" },
+          { id: "funcionarios", label: "Funcionários", icon: "👔" },
+          { id: "cargos-condominiais", label: "Mandatos & Cargos", icon: "🛡️" },
+          { id: "usuarios", label: "Usuários & Credenciais", icon: "🔑" },
+          { id: "usuarios-condominios", label: "Perfis em Condomínios", icon: "🏷️" },
+        ]
+
+        const currentTabName = computed(() => {
+          const t = tabs.find(x => x.id === activeTab.value)
+          return t ? t.label : ""
+        })
+
+        const columnsConfig = {
+          condominios: [
+            { key: "id", label: "ID" },
+            { key: "nome", label: "Nome", fontBold: true },
+            { key: "cnpj", label: "CNPJ" },
+            { key: "cidade", label: "Cidade/UF" },
+            { key: "total_unidades", label: "Unidades" },
+            { key: "ativo", label: "Status" }
+          ],
+          unidades: [
+            { key: "id", label: "ID" },
+            { key: "identificador", label: "Unidade", fontBold: true },
+            { key: "bloco_torre", label: "Bloco" },
+            { key: "condominio_nome", label: "Condomínio" },
+            { key: "fracao_ideal", label: "Fração Ideal" },
+            { key: "area_privativa", label: "Área (m²)" }
+          ],
+          pessoas: [
+            { key: "id", label: "ID" },
+            { key: "nome", label: "Nome Completo", fontBold: true },
+            { key: "cpf", label: "CPF" },
+            { key: "telefone", label: "Telefone" },
+            { key: "email", label: "E-mail" }
+          ],
+          "vinculos-unidade": [
+            { key: "id", label: "ID" },
+            { key: "pessoa_nome", label: "Pessoa", fontBold: true },
+            { key: "unidade_identificador", label: "Unidade" },
+            { key: "condominio_nome", label: "Condomínio" },
+            { key: "tipo_display", label: "Tipo" },
+            { key: "responsavel", label: "Resp. Legal" },
+            { key: "data_inicio", label: "Início" }
+          ],
+          funcionarios: [
+            { key: "id", label: "ID" },
+            { key: "pessoa_nome", label: "Funcionário", fontBold: true },
+            { key: "cargo_display", label: "Cargo" },
+            { key: "condominio_nome", label: "Condomínio" },
+            { key: "data_admissao", label: "Admissão" },
+            { key: "ativo", label: "Status" }
+          ],
+          "cargos-condominiais": [
+            { key: "id", label: "ID" },
+            { key: "pessoa_nome", label: "Membro", fontBold: true },
+            { key: "cargo_display", label: "Mandato" },
+            { key: "condominio_nome", label: "Condomínio" },
+            { key: "data_inicio", label: "Início" },
+            { key: "ativo", label: "Status" }
+          ],
+          usuarios: [
+            { key: "id", label: "ID" },
+            { key: "username", label: "Login", fontBold: true },
+            { key: "email", label: "E-mail" },
+            { key: "pessoa_nome", label: "Pessoa Vinculada" },
+            { key: "is_superuser", label: "Superuser" },
+            { key: "is_active", label: "Ativo" }
+          ],
+          "usuarios-condominios": [
+            { key: "id", label: "ID" },
+            { key: "usuario_username", label: "Usuário", fontBold: true },
+            { key: "condominio_nome", label: "Condomínio" },
+            { key: "perfil_nome", label: "Perfil" },
+            { key: "ativo", label: "Ativo" }
+          ]
+        }
+
+        const currentColumns = computed(() => columnsConfig[activeTab.value] || [])
+
+        // Modal
+        const showModal = ref(false)
+        const isEditing = ref(false)
+        const selectedId = ref(null)
+        const form = ref({})
+
+        const getAxiosConfig = () => {
+          const cfg = {
+            headers: {
+              "Content-Type": "application/json",
+            }
+          }
+          if (token.value) {
+            cfg.headers["Authorization"] = `Bearer ${token.value}`
+          }
+          // IMPORTANTE: se filterCondominioId estiver setado, envia. Se vazio, NÃO envia para ver tudo globalmente!
+          if (filterCondominioId.value) {
+            cfg.headers["X-Condominio-Id"] = filterCondominioId.value
+          }
+          return cfg
+        }
+
+        const handleLogin = async () => {
+          loading.value = true
+          loginError.value = ""
+          try {
+            const res = await axios.post(`${API_URL}/token/`, loginForm.value)
+            token.value = res.data.access
+            user.value = res.data.user
+            localStorage.setItem("admin_root_token", res.data.access)
+            localStorage.setItem("admin_root_user", JSON.stringify(res.data.user))
+            loadAllAux()
+            loadData()
+          } catch (err) {
+            loginError.value = err.response?.data?.detail || "Credenciais inválidas ou erro no backend."
+          } finally {
+            loading.value = false
+          }
+        }
+
+        const fillAdmin = () => {
+          loginForm.value.username = "admin"
+          loginForm.value.password = "admin123"
+        }
+
+        const logout = () => {
+          token.value = ""
+          user.value = null
+          localStorage.removeItem("admin_root_token")
+          localStorage.removeItem("admin_root_user")
+        }
+
+        const onFilterChange = () => {
+          loadData()
+        }
+
+        const loadAllAux = async () => {
+          if (!token.value) return
+          try {
+            const [rc, rp, ru, rusr] = await Promise.all([
+              axios.get(`${API_URL}/condominios/`, getAxiosConfig()),
+              axios.get(`${API_URL}/pessoas/`, getAxiosConfig()),
+              axios.get(`${API_URL}/unidades/`, getAxiosConfig()),
+              axios.get(`${API_URL}/usuarios/`, getAxiosConfig()),
+            ])
+            condominiosList.value = rc.data.results || rc.data
+            pessoasList.value = rp.data.results || rp.data
+            unidadesList.value = ru.data.results || ru.data
+            usuariosList.value = rusr.data.results || rusr.data
+          } catch (e) {
+            console.error("Erro ao carregar listas auxiliares:", e)
+          }
+        }
+
+        const loadData = async () => {
+          if (!token.value) return
+          loading.value = true
+          globalMsg.value = ""
+          try {
+            const params = {}
+            if (searchQuery.value) params.search = searchQuery.value
+            const res = await axios.get(`${API_URL}/${activeTab.value}/`, {
+              ...getAxiosConfig(),
+              params
+            })
+            items.value = res.data.results || res.data
+            counts.value[activeTab.value] = items.value.length
+          } catch (err) {
+            globalMsg.value = "Erro ao buscar dados do módulo: " + (err.response?.data?.detail || err.message)
+            globalMsgType.value = "error"
+          } finally {
+            loading.value = false
+          }
+        }
+
+        const openModal = (item = null) => {
+          modalError.value = ""
+          loadAllAux()
+          if (item) {
+            isEditing.value = true
+            selectedId.value = item.id
+            form.value = JSON.parse(JSON.stringify(item))
+            if (activeTab.value === 'usuarios') {
+              form.value.password = ""
+            }
+          } else {
+            isEditing.value = false
+            selectedId.value = null
+            // Defaults por tab
+            if (activeTab.value === 'condominios') {
+              form.value = { nome: "", cnpj: "", endereco: "", numero: "", complemento: "", cidade: "São Paulo", uf: "SP", cep: "", ativo: true }
+            } else if (activeTab.value === 'unidades') {
+              form.value = { condominio: condominiosList.value[0]?.id || "", identificador: "", bloco_torre: "", fracao_ideal: null, area_privativa: null, observacoes: "" }
+            } else if (activeTab.value === 'pessoas') {
+              form.value = { nome: "", cpf: "", telefone: "", email: "", data_nascimento: null }
+            } else if (activeTab.value === 'vinculos-unidade') {
+              form.value = { pessoa: pessoasList.value[0]?.id || "", unidade: unidadesList.value[0]?.id || "", tipo: "MORADOR", data_inicio: new Date().toISOString().split("T")[0], data_fim: null, responsavel: false }
+            } else if (activeTab.value === 'funcionarios') {
+              form.value = { pessoa: pessoasList.value[0]?.id || "", condominio: condominiosList.value[0]?.id || "", cargo: "PORTEIRO", endereco_proprio: "", data_admissao: new Date().toISOString().split("T")[0], data_demissao: null, ativo: true }
+            } else if (activeTab.value === 'cargos-condominiais') {
+              form.value = { pessoa: pessoasList.value[0]?.id || "", condominio: condominiosList.value[0]?.id || "", cargo: "SINDICO", data_inicio: new Date().toISOString().split("T")[0], data_fim: null, ativo: true }
+            } else if (activeTab.value === 'usuarios') {
+              form.value = { username: "", email: "", password: "", pessoa: null, is_active: true, is_staff: true, is_superuser: false }
+            } else if (activeTab.value === 'usuarios-condominios') {
+              form.value = { usuario: usuariosList.value[0]?.id || "", condominio: condominiosList.value[0]?.id || "", perfil: "SINDICO", ativo: true }
+            }
+          }
+          showModal.value = true
+        }
+
+        const saveForm = async () => {
+          saving.value = true
+          modalError.value = ""
+          try {
+            const payload = { ...form.value }
+            if (activeTab.value === 'usuarios' && isEditing.value && !payload.password) {
+              delete payload.password
+            }
+
+            if (isEditing.value) {
+              await axios.put(`${API_URL}/${activeTab.value}/${selectedId.value}/`, payload, getAxiosConfig())
+              globalMsg.value = "Registro atualizado com sucesso no banco de dados!"
+            } else {
+              await axios.post(`${API_URL}/${activeTab.value}/`, payload, getAxiosConfig())
+              globalMsg.value = "Novo registro criado com sucesso!"
+            }
+            globalMsgType.value = "success"
+            showModal.value = false
+            loadData()
+            loadAllAux()
+          } catch (err) {
+            const data = err.response?.data
+            let msg = "Falha ao gravar no banco."
+            if (data && typeof data === 'object') {
+              msg = Object.entries(data).map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(", ") : v}`).join(" | ")
+            }
+            modalError.value = msg
+          } finally {
+            saving.value = false
+          }
+        }
+
+        const deleteItem = async (item) => {
+          const nomeDesc = item.nome || item.identificador || item.username || item.id
+          if (!confirm(`Confirma a EXCLUSÃO PERMANENTE do registro "${nomeDesc}" no módulo ${currentTabName.value}?`)) return
+          try {
+            await axios.delete(`${API_URL}/${activeTab.value}/${item.id}/`, getAxiosConfig())
+            globalMsg.value = `Registro "${nomeDesc}" excluído com sucesso!`
+            globalMsgType.value = "success"
+            loadData()
+            loadAllAux()
+          } catch (err) {
+            globalMsg.value = "Erro ao excluir: " + (err.response?.data?.detail || err.message)
+            globalMsgType.value = "error"
+          }
+        }
+
+        onMounted(() => {
+          if (token.value) {
+            loadAllAux()
+            loadData()
+          }
+        })
+
+        return {
+          token, user, loading, saving, globalMsg, globalMsgType, modalError, searchQuery, filterCondominioId,
+          loginForm, loginError, activeTab, items, counts, tabs, currentTabName, currentColumns,
+          condominiosList, pessoasList, unidadesList, usuariosList,
+          showModal, isEditing, form,
+          handleLogin, fillAdmin, logout, onFilterChange, loadData, openModal, saveForm, deleteItem
+        }
+      }
+    }).mount('#app')
+  </script>
+</body>
+</html>
