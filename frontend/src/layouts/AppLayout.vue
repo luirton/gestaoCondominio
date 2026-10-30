@@ -14,24 +14,53 @@
         </div>
       </div>
 
-      <!-- Perfil Ativo Badge -->
-      <div class="p-4 mx-3 my-3 bg-slate-800/80 rounded-xl border border-slate-700/60">
-        <div class="flex items-center justify-between mb-1.5">
-          <span class="text-xs font-semibold uppercase tracking-wider text-slate-400">Perfil Ativo</span>
-          <span class="text-xs px-2 py-0.5 rounded-full font-medium" :class="roleBadgeClass">
-            {{ roleDisplayName }}
-          </span>
+      <!-- Card Usuário & Condomínio no Menu Lateral -->
+      <div class="p-3.5 mx-3 my-2.5 bg-slate-800/90 rounded-2xl border border-slate-700/70 shadow-sm space-y-3">
+        <!-- Usuário & Papel -->
+        <div class="flex items-center space-x-3">
+          <div class="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center font-bold text-white text-base shadow-md shrink-0">
+            {{ (authStore.user?.first_name || authStore.user?.username || 'U').charAt(0).toUpperCase() }}
+          </div>
+          <div class="min-w-0 flex-1">
+            <p class="text-xs font-bold text-white truncate">
+              {{ authStore.user?.first_name ? `${authStore.user.first_name} ${authStore.user.last_name || ''}` : authStore.user?.username }}
+            </p>
+            <div class="flex items-center gap-1.5 mt-0.5">
+              <span class="inline-block text-[10px] px-2 py-0.5 rounded-full font-semibold" :class="roleBadgeClass">
+                {{ roleDisplayName }}
+              </span>
+            </div>
+          </div>
         </div>
-        <p class="text-sm font-medium text-white truncate">{{ authStore.user?.username }}</p>
-        <p class="text-xs text-slate-400 truncate">{{ authStore.user?.email || 'Sem email cadastrado' }}</p>
 
-        <!-- Seletor rápido de Perfil (caso o usuário tenha múltiplos vínculos ou seja admin) -->
-        <div v-if="authStore.user?.perfis?.length > 1 || authStore.user?.is_superuser" class="mt-3 pt-2 border-t border-slate-700">
-          <label class="block text-[11px] text-slate-400 mb-1">Alternar Visão de Perfil:</label>
+        <!-- Condomínio Ativo -->
+        <div class="pt-2 border-t border-slate-700/60">
+          <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1 flex items-center gap-1">
+            <span>🏢</span> Condomínio Ativo
+          </label>
+          <div v-if="meusCondominios.length > 1 || authStore.user?.is_superuser">
+            <select
+              :value="authStore.activeCondominioId"
+              @change="handleCondominioChange($event.target.value)"
+              class="w-full text-xs font-semibold bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-white focus:outline-none focus:border-blue-500 shadow-inner"
+            >
+              <option v-for="c in meusCondominios" :key="c.id" :value="String(c.id)">
+                {{ c.nome }}
+              </option>
+            </select>
+          </div>
+          <div v-else class="text-xs font-semibold text-slate-200 bg-slate-900/80 px-2.5 py-1.5 rounded-lg border border-slate-700/60 truncate">
+            {{ meusCondominios[0]?.nome || 'Condomínio Vinculado' }}
+          </div>
+        </div>
+
+        <!-- Seletor rápido de Perfil (caso o usuário tenha múltiplos perfis) -->
+        <div v-if="authStore.user?.perfis?.length > 1 || authStore.user?.is_superuser" class="pt-2 border-t border-slate-700/60">
+          <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Alternar Visão:</label>
           <select 
             :value="authStore.currentRole" 
             @change="handleProfileChange($event.target.value)"
-            class="w-full text-xs bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-slate-200 focus:outline-none focus:border-blue-500"
+            class="w-full text-xs bg-slate-950 border border-slate-700 rounded-lg px-2 py-1 text-slate-200 focus:outline-none focus:border-blue-500"
           >
             <option value="SINDICO">Síndico (Total)</option>
             <option value="SUBSINDICO">Subsíndico</option>
@@ -242,45 +271,6 @@
 
     <!-- Main Content Area -->
     <div class="flex-1 flex flex-col min-w-0 overflow-hidden">
-      <!-- Top Header -->
-      <header class="h-16 bg-white border-b border-slate-200 px-6 flex items-center justify-between z-10">
-        <div class="flex items-center space-x-3">
-          <!-- Seletor / Indicador de Condomínio Ativo -->
-          <div v-if="meusCondominios.length > 0" class="flex items-center space-x-2 bg-slate-100 py-1.5 px-3 rounded-xl border border-slate-200">
-            <span class="text-xs font-semibold text-slate-500">🏢 Condomínio:</span>
-            <select
-              v-if="meusCondominios.length > 1 || authStore.user?.is_superuser"
-              :value="authStore.activeCondominioId"
-              @change="handleCondominioChange($event.target.value)"
-              class="text-xs font-bold text-slate-800 bg-transparent border-0 focus:outline-none cursor-pointer"
-            >
-              <option v-for="c in meusCondominios" :key="c.id" :value="String(c.id)">
-                {{ c.nome }}
-              </option>
-            </select>
-            <span v-else class="text-xs font-bold text-slate-800">
-              {{ meusCondominios[0]?.nome }}
-            </span>
-          </div>
-
-          <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-emerald-100 text-emerald-800">
-            JWT Autenticado
-          </span>
-        </div>
-
-        <div class="flex items-center space-x-4">
-          <div class="text-right">
-            <p class="text-sm font-semibold text-slate-800 leading-tight">
-              {{ authStore.user?.first_name ? `${authStore.user.first_name} ${authStore.user.last_name || ''}` : authStore.user?.username }}
-            </p>
-            <p class="text-xs text-slate-500">{{ roleDisplayName }}</p>
-          </div>
-          <div class="w-9 h-9 rounded-full bg-slate-100 border border-slate-300 flex items-center justify-center font-bold text-slate-700">
-            {{ (authStore.user?.username || 'U').charAt(0).toUpperCase() }}
-          </div>
-        </div>
-      </header>
-
       <!-- Main Body -->
       <main class="flex-1 overflow-y-auto p-6 md:p-8 bg-slate-50">
         <router-view />

@@ -110,10 +110,18 @@
 
               <button
                 @click="openModal(p)"
-                class="px-2 py-1 text-slate-500 hover:text-slate-800 text-xs font-medium"
+                class="px-2.5 py-1 text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded text-xs font-medium border border-slate-200 transition"
                 title="Editar parâmetros"
               >
                 Editar
+              </button>
+
+              <button
+                @click="excluirPeriodo(p)"
+                class="px-2.5 py-1 text-rose-600 hover:text-rose-800 hover:bg-rose-50 rounded text-xs font-medium border border-rose-200 transition"
+                title="Excluir prestação de contas"
+              >
+                Excluir
               </button>
             </td>
           </tr>
@@ -140,6 +148,27 @@
         </div>
 
         <form @submit.prevent="savePeriodo" class="p-6 space-y-6 max-h-[82vh] overflow-y-auto">
+          <!-- Campo Condomínio Vinculado (Bloqueado) -->
+          <div class="p-3 bg-slate-50 rounded-xl border border-slate-200">
+            <label class="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1.5">
+              <span>🏢</span> Condomínio Vinculado (Bloqueado para alteração)
+            </label>
+            <div class="flex items-center gap-2">
+              <input
+                type="text"
+                :value="condominioNomeAtual"
+                disabled
+                class="w-full text-xs font-bold bg-slate-100 border border-slate-300 rounded-lg p-2 text-slate-800 cursor-not-allowed select-none shadow-xs"
+              />
+              <span class="px-2.5 py-1.5 text-[11px] font-bold bg-slate-200 text-slate-600 rounded-lg whitespace-nowrap border border-slate-300 flex items-center gap-1">
+                <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                </svg>
+                Bloqueado
+              </span>
+            </div>
+          </div>
+
           <!-- Bloco 0: Seleção Automática pelo Rótulo Calendário -->
           <div class="p-4 bg-indigo-50 border border-indigo-200 rounded-xl shadow-sm">
             <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -540,9 +569,11 @@
 <script setup>
 import { ref, computed, onMounted } from "vue"
 import financeiroApi from "@/api/financeiro"
+import apiClient from "@/api/client"
 
 const loading = ref(true)
 const periodos = ref([])
+const condominiosList = ref([])
 const showModal = ref(false)
 const editingId = ref(null)
 const saving = ref(false)
@@ -551,6 +582,18 @@ const errorMessage = ref("")
 const seletorMesAno = ref("")
 const contasBancarias = ref([])
 const saldosContasForm = ref([])
+
+const condominioNomeAtual = computed(() => {
+  const condId = form.value.condominio
+  const c = condominiosList.value.find(item => item.id === condId)
+  if (c) return c.nome
+  if (periodos.value.length > 0) {
+    const p = periodos.value.find(item => item.condominio === condId)
+    if (p?.condominio_nome) return p.condominio_nome
+    if (periodos.value[0]?.condominio_nome) return periodos.value[0].condominio_nome
+  }
+  return "Condomínio Vinculado"
+})
 
 // Mini-Modal Conta Bancária
 const showModalConta = ref(false)
@@ -734,9 +777,23 @@ async function openModal(periodo = null) {
     inicializarSaldosContasForm(periodo)
   } else {
     editingId.value = null
-    const hoje = new Date()
-    const mesAtual = hoje.toISOString().substring(0, 7)
-    seletorMesAno.value = mesAtual
+
+    // Projeta o próximo mês com base nos períodos existentes para evitar duplicidade
+    let proximoMesAno = new Date().toISOString().substring(0, 7)
+    if (periodos.value.length > 0) {
+      const datasFim = periodos.value
+        .map(p => p.data_fim_prestacao)
+        .filter(Boolean)
+        .sort()
+      if (datasFim.length > 0) {
+        const ultDataStr = datasFim[datasFim.length - 1] // ex: '2026-10-31'
+        const [anoU, mesU] = ultDataStr.split("-").map(Number)
+        const proxMes = mesU === 12 ? 1 : mesU + 1
+        const proxAno = mesU === 12 ? anoU + 1 : anoU
+        proximoMesAno = `${proxAno}-${String(proxMes).padStart(2, "0")}`
+      }
+    }
+    seletorMesAno.value = proximoMesAno
 
     form.value = {
       condominio: condId,
@@ -756,7 +813,7 @@ async function openModal(periodo = null) {
       data_saldo_bancario: "",
       sindico_nome: "",
       sindico_cpf: "",
-      data_assinatura: hoje.toISOString().substring(0, 10),
+      data_assinatura: new Date().toISOString().substring(0, 10),
     }
 
     aplicarPreenchimentoAutomaticoDatas()
@@ -839,7 +896,16 @@ async function savePeriodo() {
     if (typeof data === "object") {
       const msgs = []
       for (const [k, v] of Object.entries(data)) {
-        msgs.push(`${k}: ${typeof v === "object" ? JSON.stringify(v) : v}`)
+        const vStr = typeof v === "object" ? JSON.stringify(v) : String(v)
+        if (
+          vStr.includes("unique_periodo_por_condominio") ||
+          vStr.includes("set único") ||
+          vStr.includes("data_inicio_prestacao, data_fim_prestacao")
+        ) {
+          msgs.push("Já existe uma prestação de contas cadastrada para este condomínio no mesmo mês/intervalo de datas. Selecione outro mês no calendário ou edite o período já existente.")
+        } else {
+          msgs.push(`${k === "non_field_errors" ? "Aviso" : k}: ${vStr}`)
+        }
       }
       errorMessage.value = msgs.join(" | ")
     } else {
@@ -847,6 +913,23 @@ async function savePeriodo() {
     }
   } finally {
     saving.value = false
+  }
+}
+
+async function excluirPeriodo(periodo) {
+  if (periodo.status === "PUBLICADO") {
+    alert("Este período está com status PUBLICADO. Para excluí-lo, reabra-o primeiro na tela de Prestação.")
+    return
+  }
+  if (!confirm(`Atenção: Deseja realmente excluir o período de prestação "${periodo.mes_referencia_rotulo}"?\n\nTodas as cotas geradas, despesas e saldos vinculados a este período serão excluídos permanentemente.`)) {
+    return
+  }
+  try {
+    await financeiroApi.deletePeriodo(periodo.id)
+    alert("Período de prestação de contas excluído com sucesso.")
+    await loadPeriodos()
+  } catch (err) {
+    alert(err.response?.data?.error || err.response?.data?.detail || "Erro ao excluir período.")
   }
 }
 
@@ -861,7 +944,13 @@ async function gerarCotas(periodo) {
   }
 }
 
-onMounted(() => {
-  loadPeriodos()
+onMounted(async () => {
+  try {
+    const res = await apiClient.get("/condominios/")
+    condominiosList.value = res.data.results || res.data
+  } catch (e) {
+    console.error("Erro ao buscar condominios:", e)
+  }
+  await loadPeriodos()
 })
 </script>

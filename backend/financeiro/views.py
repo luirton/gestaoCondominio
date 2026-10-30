@@ -104,6 +104,26 @@ class PeriodoPrestacaoViewSet(viewsets.ModelViewSet):
             detalhes=f"Período {periodo.mes_referencia_rotulo} atualizado."
         )
 
+    def perform_destroy(self, instance):
+        user_profiles = get_user_profiles(self.request.user)
+        if not self.request.user.is_superuser and "SINDICO" not in user_profiles:
+            raise PermissionDenied("Apenas o Síndico ou Administrador pode excluir um período de prestação.")
+        if instance.status == PeriodoPrestacao.StatusPeriodo.PUBLICADO and not self.request.user.is_superuser:
+            raise ValidationError("Período publicado não pode ser excluído diretamente. Reabra-o primeiro.")
+
+        rotulo = instance.mes_referencia_rotulo
+        condominio = instance.condominio
+        periodo_id = str(instance.id)
+        instance.delete()
+        AuditLog.objects.create(
+            usuario=self.request.user,
+            condominio=condominio,
+            entidade="PeriodoPrestacao",
+            registro_id=periodo_id,
+            acao=AuditLog.AcaoAudit.DELETE,
+            detalhes=f"Período {rotulo} excluído com sucesso."
+        )
+
     @action(detail=True, methods=["post"], url_path="gerar-cotas")
     def gerar_cotas(self, request, pk=None):
         periodo = self.get_object()

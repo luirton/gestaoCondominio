@@ -36,6 +36,9 @@ export const financeiroApi = {
   updatePeriodo(id, data) {
     return apiClient.patch(`/financeiro/periodos/${id}/`, data)
   },
+  deletePeriodo(id) {
+    return apiClient.delete(`/financeiro/periodos/${id}/`)
+  },
   gerarCotas(periodoId) {
     return apiClient.post(`/financeiro/periodos/${periodoId}/gerar-cotas/`)
   },
