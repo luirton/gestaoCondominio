@@ -12,4 +12,6 @@ urlpatterns = [
     path("api/token/refresh/", TokenRefreshView.as_view(), name="token_refresh"),
     # Core API Endpoints
     path("api/", include("core.urls")),
+    # Financeiro / Prestação de Contas API Endpoints
+    path("api/financeiro/", include("financeiro.urls")),
 ]
