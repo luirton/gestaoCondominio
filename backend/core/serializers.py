@@ -444,6 +444,7 @@ class CargoCondominialSerializer(serializers.ModelSerializer):
             "data_inicio",
             "data_fim",
             "ativo",
+            "isento_condominio",
             "created_at",
             "updated_at",
         ]

@@ -64,9 +64,14 @@
                 <p class="text-[11px] font-normal text-slate-500 font-mono">{{ item.pessoa_cpf || 'Sem CPF' }}</p>
               </td>
               <td class="p-4">
-                <span class="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-200">
-                  {{ item.cargo_display }}
-                </span>
+                <div class="flex items-center gap-1.5 flex-wrap">
+                  <span class="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+                    {{ item.cargo_display }}
+                  </span>
+                  <span v-if="item.isento_condominio" class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-300 flex items-center gap-1" title="Isenção de cota condominial da unidade">
+                    ★ Isento Cota
+                  </span>
+                </div>
               </td>
               <td class="p-4 text-slate-600">{{ item.condominio_nome }}</td>
               <td class="p-4 text-slate-600">{{ formatDate(item.data_inicio) }}</td>
@@ -160,9 +165,18 @@
             </div>
           </div>
 
-          <div class="flex items-center space-x-2 pt-1">
-            <input id="mandatoAtivo" v-model="form.ativo" type="checkbox" class="rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
-            <label for="mandatoAtivo" class="text-slate-700 font-medium">Mandato Vigente / Ativo</label>
+          <div class="space-y-2 pt-1">
+            <div class="flex items-center space-x-2">
+              <input id="mandatoAtivo" v-model="form.ativo" type="checkbox" class="rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
+              <label for="mandatoAtivo" class="text-slate-700 font-medium">Mandato Vigente / Ativo</label>
+            </div>
+            <div class="flex items-start space-x-2 p-2.5 bg-amber-50/70 border border-amber-200 rounded-xl">
+              <input id="isentoCondominio" v-model="form.isento_condominio" type="checkbox" class="mt-0.5 rounded border-amber-300 text-amber-600 focus:ring-amber-500" />
+              <label for="isentoCondominio" class="text-amber-900 font-medium cursor-pointer">
+                <span class="block font-bold">Isento de Condomínio</span>
+                <span class="text-[11px] text-amber-700 font-normal">Se marcado, o titular deste cargo tem isenção da taxa condominial da sua unidade ao gerar as cotas.</span>
+              </label>
+            </div>
           </div>
 
           <div class="pt-4 border-t flex justify-end space-x-2">
@@ -206,6 +220,7 @@ const form = ref({
   data_inicio: new Date().toISOString().split("T")[0],
   data_fim: null,
   ativo: true,
+  isento_condominio: false,
 })
 
 const fetchAuxiliaryData = async () => {
@@ -256,7 +271,7 @@ const openModal = (item = null) => {
   if (item) {
     isEditing.value = true
     selectedId.value = item.id
-    form.value = { ...item }
+    form.value = { isento_condominio: false, ...item }
   } else {
     isEditing.value = false
     selectedId.value = null
@@ -271,6 +286,7 @@ const openModal = (item = null) => {
       data_inicio: new Date().toISOString().split("T")[0],
       data_fim: null,
       ativo: true,
+      isento_condominio: false,
     }
   }
   showModal.value = true

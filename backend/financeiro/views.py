@@ -9,10 +9,22 @@ from django.http import HttpResponse
 from django.utils import timezone
 from decimal import Decimal
 
+from core.models import CargoCondominial
 from core.views import get_request_condominios
 from core.permissions import IsSindico, IsSindicoOrSubSindico, get_user_profiles
-from .models import PeriodoPrestacao, ReceitaCota, ReceitaExtra, Despesa, SaldoPeriodo, AuditLog
+from .models import (
+    ContaBancaria,
+    PeriodoPrestacao,
+    PeriodoSaldoConta,
+    ReceitaCota,
+    ReceitaExtra,
+    Despesa,
+    SaldoPeriodo,
+    AuditLog,
+)
 from .serializers import (
+    ContaBancariaSerializer,
+    PeriodoSaldoContaSerializer,
     PeriodoPrestacaoSerializer,
     ReceitaCotaSerializer,
     ReceitaExtraSerializer,
@@ -27,6 +39,22 @@ from .services import (
     exportar_relatorio_pdf,
     exportar_relatorio_excel,
 )
+
+
+class ContaBancariaViewSet(viewsets.ModelViewSet):
+    serializer_class = ContaBancariaSerializer
+    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    filterset_fields = ["condominio", "tipo_conta", "ativo"]
+    search_fields = ["banco_nome", "descricao", "conta"]
+    ordering_fields = ["ordem", "banco_nome", "id"]
+    ordering = ["ordem", "banco_nome"]
+
+    def get_queryset(self):
+        conds = get_request_condominios(self.request)
+        qs = ContaBancaria.objects.select_related("condominio").all()
+        if conds is not None:
+            qs = qs.filter(condominio_id__in=conds)
+        return qs
 
 
 class PeriodoPrestacaoViewSet(viewsets.ModelViewSet):
@@ -168,11 +196,39 @@ class PeriodoPrestacaoViewSet(viewsets.ModelViewSet):
         response["Content-Disposition"] = f'attachment; filename="{nome_arquivo}"'
         return response
 
+    @action(detail=False, methods=["get"], url_path="sindico-ativo")
+    def sindico_ativo(self, request):
+        """
+        Retorna os dados do síndico ativo para o condomínio informado.
+        """
+        condominio_id = request.query_params.get("condominio_id") or request.query_params.get("condominio")
+        if not condominio_id:
+            conds = get_request_condominios(request)
+            if conds:
+                condominio_id = conds[0]
+
+        if not condominio_id:
+            return Response({"nome": "", "cpf": "", "cargo": ""})
+
+        cargo = CargoCondominial.objects.filter(
+            condominio_id=condominio_id,
+            cargo=CargoCondominial.TipoCargo.SINDICO,
+            ativo=True,
+        ).select_related("pessoa").first()
+
+        if cargo and cargo.pessoa:
+            return Response({
+                "nome": cargo.pessoa.nome,
+                "cpf": cargo.pessoa.cpf or "",
+                "cargo": cargo.get_cargo_display(),
+            })
+        return Response({"nome": "", "cpf": "", "cargo": ""})
+
 
 class ReceitaCotaViewSet(viewsets.ModelViewSet):
     serializer_class = ReceitaCotaSerializer
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
-    filterset_fields = ["periodo", "unidade", "status"]
+    filterset_fields = ["periodo", "unidade", "status", "isento"]
     search_fields = ["unidade__identificador", "observacao"]
     ordering_fields = ["numero_ordem", "data_pagamento", "valor_pago"]
     ordering = ["numero_ordem"]
@@ -190,13 +246,61 @@ class ReceitaCotaViewSet(viewsets.ModelViewSet):
             raise ValidationError("Não é possível alterar cotas de um período já fechado.")
         serializer.save()
 
+    @action(detail=True, methods=["post"], url_path="dar-baixa")
+    def dar_baixa(self, request, pk=None):
+        """
+        Dá baixa no pagamento de uma cota individual.
+        """
+        cota = self.get_object()
+        if cota.periodo.status == PeriodoPrestacao.StatusPeriodo.FECHADO and not request.user.is_superuser:
+            return Response({"error": "Período fechado não permite baixa."}, status=status.HTTP_400_BAD_REQUEST)
+        if cota.isento:
+            return Response({"error": "Cota isenta não permite baixa de pagamento."}, status=status.HTTP_400_BAD_REQUEST)
+
+        data_pgto = request.data.get("data_pagamento") or timezone.now().date()
+        cota_val = request.data.get("cota") if request.data.get("cota") is not None else cota.valor_titulo
+        valor_pg = request.data.get("valor_pago") if request.data.get("valor_pago") is not None else cota_val
+
+        cota.data_pagamento = data_pgto
+        cota.cota = Decimal(str(cota_val))
+        cota.valor_pago = Decimal(str(valor_pg))
+        if cota.valor_pago > cota.cota:
+            cota.juros_multa = cota.valor_pago - cota.cota
+        else:
+            cota.juros_multa = Decimal("0.00")
+        cota.status = ReceitaCota.StatusCota.PAGO
+        if "observacao" in request.data:
+            cota.observacao = request.data.get("observacao")
+        cota.save()
+
+        return Response(self.get_serializer(cota).data)
+
+    @action(detail=True, methods=["post"], url_path="remover-baixa")
+    def remover_baixa(self, request, pk=None):
+        """
+        Remove / estorna a baixa de uma cota individual.
+        """
+        cota = self.get_object()
+        if cota.periodo.status == PeriodoPrestacao.StatusPeriodo.FECHADO and not request.user.is_superuser:
+            return Response({"error": "Período fechado não permite remoção de baixa."}, status=status.HTTP_400_BAD_REQUEST)
+
+        cota.data_pagamento = None
+        cota.cota = None
+        cota.valor_pago = None
+        cota.juros_multa = Decimal("0.00")
+        cota.status = ReceitaCota.StatusCota.ISENTO if cota.isento else ReceitaCota.StatusCota.PENDENTE
+        cota.save()
+
+        return Response(self.get_serializer(cota).data)
+
     @action(detail=False, methods=["post"], url_path="marcar-em-massa")
     def marcar_em_massa(self, request):
         """
-        Marca múltiplas cotas como pagas de uma vez só.
-        Aceita: { cota_ids: [1, 2, ...], data_pagamento: "2026-10-05" }
+        Marca múltiplas cotas como pagas ou remove baixa em massa.
+        Aceita: { cota_ids: [1, 2, ...], data_pagamento: "2026-10-05", acao: "BAIXAR" | "REMOVER_BAIXA" }
         """
         cota_ids = request.data.get("cota_ids", [])
+        acao = request.data.get("acao", "BAIXAR")
         data_pagamento = request.data.get("data_pagamento") or timezone.now().date()
 
         if not cota_ids:
@@ -207,14 +311,26 @@ class ReceitaCotaViewSet(viewsets.ModelViewSet):
         for c in cotas:
             if c.periodo.status == PeriodoPrestacao.StatusPeriodo.FECHADO and not request.user.is_superuser:
                 continue
-            c.data_pagamento = data_pagamento
-            c.cota = c.valor_titulo
-            c.valor_pago = c.valor_titulo
-            c.status = ReceitaCota.StatusCota.PAGO
+            if c.isento:
+                continue
+
+            if acao == "REMOVER_BAIXA":
+                c.data_pagamento = None
+                c.cota = None
+                c.valor_pago = None
+                c.juros_multa = Decimal("0.00")
+                c.status = ReceitaCota.StatusCota.PENDENTE
+            else:
+                c.data_pagamento = data_pagamento
+                c.cota = c.valor_titulo
+                c.valor_pago = c.valor_titulo
+                c.juros_multa = Decimal("0.00")
+                c.status = ReceitaCota.StatusCota.PAGO
             c.save()
             atualizadas += 1
 
-        return Response({"message": f"{atualizadas} cotas marcadas como pagas com sucesso."})
+        msg = f"{atualizadas} cotas baixadas com sucesso." if acao != "REMOVER_BAIXA" else f"Baixa removida de {atualizadas} cotas."
+        return Response({"message": msg})
 
 
 class ReceitaExtraViewSet(viewsets.ModelViewSet):
@@ -265,8 +381,9 @@ class DashboardFinanceiroView(APIView):
                 "rotulo": ultimo_periodo.mes_referencia_rotulo,
                 "status": ultimo_periodo.status,
                 "totais": calcular_totais_periodo(ultimo_periodo),
-                "cotas_pendentes": ultimo_periodo.cotas.filter(data_pagamento__isnull=True).count(),
-                "cotas_pagas": ultimo_periodo.cotas.filter(data_pagamento__isnull=False).count(),
+                "cotas_pendentes": ultimo_periodo.cotas.filter(data_pagamento__isnull=True, isento=False).count(),
+                "cotas_pagas": ultimo_periodo.cotas.filter(data_pagamento__isnull=False, isento=False).count(),
+                "cotas_isentas": ultimo_periodo.cotas.filter(isento=True).count(),
                 "despesas_sem_comprovante": ultimo_periodo.despesas.filter(comprovante="").count()
             }
 

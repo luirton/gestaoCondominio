@@ -114,6 +114,11 @@
             <span class="text-slate-400 block">Pendentes</span>
             <strong class="text-rose-600 text-sm font-bold">{{ periodoAtual.cotas_pendentes }}</strong>
           </div>
+          <div v-if="periodoAtual.cotas_isentas" class="w-px h-6 bg-slate-200"></div>
+          <div v-if="periodoAtual.cotas_isentas">
+            <span class="text-slate-400 block">Isentas</span>
+            <strong class="text-amber-600 text-sm font-bold">{{ periodoAtual.cotas_isentas }}</strong>
+          </div>
           <div class="w-px h-6 bg-slate-200"></div>
           <div>
             <span class="text-slate-400 block">Sem Comprovante</span>

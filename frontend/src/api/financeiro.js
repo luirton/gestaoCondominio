@@ -6,12 +6,29 @@ export const financeiroApi = {
     return apiClient.get("/financeiro/dashboard/")
   },
 
+  // Contas Bancárias
+  getContasBancarias(params = {}) {
+    return apiClient.get("/financeiro/contas-bancarias/", { params: { page_size: 500, ...params } })
+  },
+  createContaBancaria(data) {
+    return apiClient.post("/financeiro/contas-bancarias/", data)
+  },
+  updateContaBancaria(id, data) {
+    return apiClient.patch(`/financeiro/contas-bancarias/${id}/`, data)
+  },
+  deleteContaBancaria(id) {
+    return apiClient.delete(`/financeiro/contas-bancarias/${id}/`)
+  },
+
   // Períodos
   getPeriodos(params = {}) {
     return apiClient.get("/financeiro/periodos/", { params })
   },
   getPeriodo(id) {
     return apiClient.get(`/financeiro/periodos/${id}/`)
+  },
+  getSindicoAtivo(condominioId) {
+    return apiClient.get("/financeiro/periodos/sindico-ativo/", { params: { condominio_id: condominioId } })
   },
   createPeriodo(data) {
     return apiClient.post("/financeiro/periodos/", data)
@@ -51,6 +68,12 @@ export const financeiroApi = {
   },
   updateCota(id, data) {
     return apiClient.patch(`/financeiro/cotas/${id}/`, data)
+  },
+  darBaixaCota(id, data = {}) {
+    return apiClient.post(`/financeiro/cotas/${id}/dar-baixa/`, data)
+  },
+  removerBaixaCota(id) {
+    return apiClient.post(`/financeiro/cotas/${id}/remover-baixa/`)
   },
   marcarCotasEmMassa(data) {
     return apiClient.post("/financeiro/cotas/marcar-em-massa/", data)

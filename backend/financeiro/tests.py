@@ -4,9 +4,11 @@ from django.test import TestCase
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 
-from core.models import Condominio, Unidade
+from core.models import Condominio, Unidade, Pessoa, VinculoPessoaUnidade, CargoCondominial
 from financeiro.models import (
+    ContaBancaria,
     PeriodoPrestacao,
+    PeriodoSaldoConta,
     ReceitaCota,
     ReceitaExtra,
     Despesa,
@@ -172,3 +174,78 @@ class FinanceiroCalculosTestCase(TestCase):
         )
         with self.assertRaises(ValidationError):
             despesa_invalida.clean()
+
+    def test_isencao_mandato_sindico_na_geracao_de_cotas(self):
+        # 1. Cria pessoa e vinculo de responsavel com a unidade 1
+        sindico_pessoa = Pessoa.objects.create(
+            nome="Síndico Isento de Teste",
+            cpf="111.222.333-44",
+        )
+        VinculoPessoaUnidade.objects.create(
+            pessoa=sindico_pessoa,
+            unidade=self.unidade1,
+            tipo=VinculoPessoaUnidade.TipoVinculo.PROPRIETARIO,
+            data_inicio=date(2026, 1, 1),
+            responsavel=True,
+        )
+        # 2. Cria mandato de sindico com isenção
+        CargoCondominial.objects.create(
+            condominio=self.condominio,
+            pessoa=sindico_pessoa,
+            cargo=CargoCondominial.TipoCargo.SINDICO,
+            data_inicio=date(2026, 1, 1),
+            ativo=True,
+            isento_condominio=True,
+        )
+
+        # 3. Gera cotas para o período
+        gerar_cotas_iniciais(self.periodo)
+
+        cota_unid1 = ReceitaCota.objects.get(periodo=self.periodo, unidade=self.unidade1)
+        cota_unid2 = ReceitaCota.objects.get(periodo=self.periodo, unidade=self.unidade2)
+
+        # Unidade 1 deve nascer como ISENTO
+        self.assertTrue(cota_unid1.isento)
+        self.assertEqual(cota_unid1.status, ReceitaCota.StatusCota.ISENTO)
+        self.assertEqual(cota_unid1.cota, Decimal("0.00"))
+
+        # Unidade 2 permanece regular pendente
+        self.assertFalse(cota_unid2.isento)
+        self.assertEqual(cota_unid2.status, ReceitaCota.StatusCota.PENDENTE)
+
+        # Totais: cota isenta não entra em receitas
+        totais = calcular_totais_periodo(self.periodo)
+        self.assertEqual(totais["total_cotas_regulares"], Decimal("0.00"))
+
+    def test_saldos_contas_mestre_detalhe(self):
+        conta1 = ContaBancaria.objects.create(
+            condominio=self.condominio,
+            banco_nome="Banco Inter",
+            tipo_conta=ContaBancaria.TipoConta.CORRENTE,
+            descricao="Inter CC",
+            ordem=1
+        )
+        conta2 = ContaBancaria.objects.create(
+            condominio=self.condominio,
+            banco_nome="Caixa",
+            tipo_conta=ContaBancaria.TipoConta.POUPANCA,
+            descricao="Poupança Reserva",
+            ordem=2
+        )
+
+        PeriodoSaldoConta.objects.create(
+            periodo=self.periodo,
+            conta=conta1,
+            saldo_anterior=Decimal("300.00"),
+            saldo_final=Decimal("700.00")
+        )
+        PeriodoSaldoConta.objects.create(
+            periodo=self.periodo,
+            conta=conta2,
+            saldo_anterior=Decimal("200.00"),
+            saldo_final=Decimal("500.00")
+        )
+
+        totais = calcular_totais_periodo(self.periodo)
+        self.assertEqual(totais["saldo_anterior_total"], Decimal("500.00"))
+        self.assertEqual(totais["total_saldo_bancario"], Decimal("1200.00"))

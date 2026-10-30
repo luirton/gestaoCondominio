@@ -520,6 +520,10 @@
                 <input id="mandAtivo" v-model="form.ativo" type="checkbox" class="rounded border-slate-700 text-emerald-600 focus:ring-emerald-500" />
                 <label for="mandAtivo" class="text-slate-300 font-medium">Mandato Ativo</label>
               </div>
+              <div class="flex items-center space-x-2 pt-1">
+                <input id="isentoCond" v-model="form.isento_condominio" type="checkbox" class="rounded border-slate-700 text-amber-500 focus:ring-amber-500" />
+                <label for="isentoCond" class="text-amber-400 font-medium">Isento de Condomínio (Cota Zerada)</label>
+              </div>
             </template>
 
             <!-- 7. USUÁRIOS E SEGURANÇA -->
@@ -702,6 +706,7 @@
             { key: "cargo_display", label: "Mandato" },
             { key: "condominio_nome", label: "Condomínio" },
             { key: "data_inicio", label: "Início" },
+            { key: "isento_condominio", label: "Isenção Cota" },
             { key: "ativo", label: "Status" }
           ],
           usuarios: [
@@ -872,7 +877,7 @@
             } else if (activeTab.value === 'funcionarios') {
               form.value = { pessoa: pessoasList.value[0]?.id || "", condominio: defaultCondId, cargo: "PORTEIRO", endereco_proprio: "", data_admissao: new Date().toISOString().split("T")[0], data_demissao: null, ativo: true }
             } else if (activeTab.value === 'cargos-condominiais') {
-              form.value = { pessoa: pessoasList.value[0]?.id || "", condominio: defaultCondId, cargo: "SINDICO", data_inicio: new Date().toISOString().split("T")[0], data_fim: null, ativo: true }
+              form.value = { pessoa: pessoasList.value[0]?.id || "", condominio: defaultCondId, cargo: "SINDICO", data_inicio: new Date().toISOString().split("T")[0], data_fim: null, ativo: true, isento_condominio: false }
             } else if (activeTab.value === 'usuarios') {
               form.value = { username: "", email: "", password: "", pessoa: null, is_active: true, is_staff: true, is_superuser: false }
             } else if (activeTab.value === 'usuarios-condominios') {

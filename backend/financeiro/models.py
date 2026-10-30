@@ -13,6 +13,37 @@ class TimeStampedModel(models.Model):
         abstract = True
 
 
+class ContaBancaria(TimeStampedModel):
+    class TipoConta(models.TextChoices):
+        CORRENTE = "CORRENTE", "Conta Corrente"
+        APLICACAO = "APLICACAO", "Aplicação Financeira / CDB"
+        POUPANCA = "POUPANCA", "Conta Poupança"
+        RESERVA = "RESERVA", "Reserva / Férias e 13º"
+        OUTRO = "OUTRO", "Outra Conta"
+
+    condominio = models.ForeignKey(
+        "core.Condominio",
+        on_delete=models.CASCADE,
+        related_name="contas_bancarias",
+        verbose_name="Condomínio",
+    )
+    banco_nome = models.CharField(max_length=100, verbose_name="Banco / Instituição", default="Banco Inter")
+    tipo_conta = models.CharField(max_length=30, choices=TipoConta.choices, default=TipoConta.CORRENTE, verbose_name="Tipo de Conta")
+    descricao = models.CharField(max_length=150, verbose_name="Descrição / Identificação da Conta")
+    agencia = models.CharField(max_length=20, blank=True, verbose_name="Agência")
+    conta = models.CharField(max_length=30, blank=True, verbose_name="Número da Conta")
+    ativo = models.BooleanField(default=True, verbose_name="Ativo")
+    ordem = models.IntegerField(default=1, verbose_name="Ordem de Exibição")
+
+    class Meta:
+        verbose_name = "Conta Bancária do Condomínio"
+        verbose_name_plural = "Contas Bancárias do Condomínio"
+        ordering = ["ordem", "banco_nome", "descricao"]
+
+    def __str__(self):
+        return f"{self.banco_nome} - {self.descricao} ({self.get_tipo_conta_display()})"
+
+
 class PeriodoPrestacao(TimeStampedModel):
     class StatusPeriodo(models.TextChoices):
         ABERTO = "ABERTO", "Aberto"
@@ -171,12 +202,56 @@ class PeriodoPrestacao(TimeStampedModel):
             raise ValidationError({"valor_cota_padrao": "O valor padrão da cota não pode ser negativo."})
 
 
+class PeriodoSaldoConta(TimeStampedModel):
+    """
+    Relação Mestre-Detalhe dos Saldos Anteriores e Bancários do Período por Conta Bancária.
+    """
+    periodo = models.ForeignKey(
+        PeriodoPrestacao,
+        on_delete=models.CASCADE,
+        related_name="saldos_contas",
+        verbose_name="Período de Prestação",
+    )
+    conta = models.ForeignKey(
+        ContaBancaria,
+        on_delete=models.CASCADE,
+        related_name="saldos_periodo",
+        verbose_name="Conta Bancária",
+    )
+    saldo_anterior = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        default=Decimal("0.00"),
+        verbose_name="Saldo Anterior (R$)"
+    )
+    saldo_final = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        default=Decimal("0.00"),
+        verbose_name="Saldo Final Bancário (R$)"
+    )
+
+    class Meta:
+        verbose_name = "Saldo de Conta no Período"
+        verbose_name_plural = "Saldos de Contas no Período"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["periodo", "conta"],
+                name="unique_saldo_conta_por_periodo"
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.conta.descricao} - Ant: R$ {self.saldo_anterior} | Final: R$ {self.saldo_final}"
+
+
 class ReceitaCota(TimeStampedModel):
     class StatusCota(models.TextChoices):
         PENDENTE = "PENDENTE", "Pendente"
         PAGO = "PAGO", "Pago"
         ATRASADO = "ATRASADO", "Em Atraso"
         ACORDO = "ACORDO", "Acordo"
+        ISENTO = "ISENTO", "Isento de Condomínio"
 
     periodo = models.ForeignKey(
         PeriodoPrestacao,
@@ -194,6 +269,11 @@ class ReceitaCota(TimeStampedModel):
         verbose_name="Nº Ordem",
         default=1,
         help_text="Nº da casa/unidade na ordenação da planilha"
+    )
+    isento = models.BooleanField(
+        default=False,
+        verbose_name="Isento de Condomínio",
+        help_text="Indica se o titular é isento pelo mandato (síndico/subsíndico)."
     )
     mes_referencia = models.DateField(
         verbose_name="Mês de Referência"

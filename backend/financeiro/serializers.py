@@ -1,8 +1,61 @@
 from rest_framework import serializers
 from decimal import Decimal
 from django.utils import timezone
-from .models import PeriodoPrestacao, ReceitaCota, ReceitaExtra, Despesa, SaldoPeriodo, AuditLog
+from .models import (
+    ContaBancaria,
+    PeriodoPrestacao,
+    PeriodoSaldoConta,
+    ReceitaCota,
+    ReceitaExtra,
+    Despesa,
+    SaldoPeriodo,
+    AuditLog,
+)
 from .services import calcular_totais_periodo
+
+
+class ContaBancariaSerializer(serializers.ModelSerializer):
+    tipo_display = serializers.CharField(source="get_tipo_conta_display", read_only=True)
+    condominio_nome = serializers.CharField(source="condominio.nome", read_only=True)
+
+    class Meta:
+        model = ContaBancaria
+        fields = [
+            "id",
+            "condominio",
+            "condominio_nome",
+            "banco_nome",
+            "tipo_conta",
+            "tipo_display",
+            "descricao",
+            "agencia",
+            "conta",
+            "ativo",
+            "ordem",
+            "created_at",
+            "updated_at",
+        ]
+
+
+class PeriodoSaldoContaSerializer(serializers.ModelSerializer):
+    conta_descricao = serializers.CharField(source="conta.descricao", read_only=True)
+    conta_banco = serializers.CharField(source="conta.banco_nome", read_only=True)
+    conta_tipo = serializers.CharField(source="conta.tipo_conta", read_only=True)
+    conta_tipo_display = serializers.CharField(source="conta.get_tipo_conta_display", read_only=True)
+
+    class Meta:
+        model = PeriodoSaldoConta
+        fields = [
+            "id",
+            "periodo",
+            "conta",
+            "conta_descricao",
+            "conta_banco",
+            "conta_tipo",
+            "conta_tipo_display",
+            "saldo_anterior",
+            "saldo_final",
+        ]
 
 
 class ReceitaCotaSerializer(serializers.ModelSerializer):
@@ -18,6 +71,7 @@ class ReceitaCotaSerializer(serializers.ModelSerializer):
             "unidade_identificador",
             "unidade_bloco",
             "numero_ordem",
+            "isento",
             "mes_referencia",
             "data_vencimento",
             "valor_titulo",
@@ -128,6 +182,8 @@ class PeriodoPrestacaoSerializer(serializers.ModelSerializer):
     qtd_cotas_total = serializers.SerializerMethodField()
     qtd_cotas_pagas = serializers.SerializerMethodField()
     qtd_cotas_pendentes = serializers.SerializerMethodField()
+    qtd_cotas_isentas = serializers.SerializerMethodField()
+    saldos_contas = PeriodoSaldoContaSerializer(many=True, required=False)
 
     class Meta:
         model = PeriodoPrestacao
@@ -159,9 +215,11 @@ class PeriodoPrestacaoSerializer(serializers.ModelSerializer):
             "publicado_em",
             "totais",
             "snapshot",
+            "saldos_contas",
             "qtd_cotas_total",
             "qtd_cotas_pagas",
             "qtd_cotas_pendentes",
+            "qtd_cotas_isentas",
             "created_at",
             "updated_at",
         ]
@@ -179,7 +237,10 @@ class PeriodoPrestacaoSerializer(serializers.ModelSerializer):
         return obj.cotas.filter(data_pagamento__isnull=False).count()
 
     def get_qtd_cotas_pendentes(self, obj):
-        return obj.cotas.filter(data_pagamento__isnull=True).count()
+        return obj.cotas.filter(data_pagamento__isnull=True, isento=False).count()
+
+    def get_qtd_cotas_isentas(self, obj):
+        return obj.cotas.filter(isento=True).count()
 
     def validate(self, attrs):
         dt_ini = attrs.get("data_inicio_prestacao", getattr(self.instance, "data_inicio_prestacao", None))
@@ -190,6 +251,45 @@ class PeriodoPrestacaoSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"data_fim_prestacao": "A data fim não pode ser menor que a data de início."})
 
         return attrs
+
+    def create(self, validated_data):
+        saldos_data = self.initial_data.get("saldos_contas", [])
+        periodo = super().create(validated_data)
+        self._sync_saldos_contas(periodo, saldos_data)
+        return periodo
+
+    def update(self, instance, validated_data):
+        saldos_data = self.initial_data.get("saldos_contas", None)
+        periodo = super().update(instance, validated_data)
+        if saldos_data is not None:
+            self._sync_saldos_contas(periodo, saldos_data)
+        return periodo
+
+    def _sync_saldos_contas(self, periodo, saldos_data):
+        if not saldos_data:
+            return
+        total_saldo_anterior = Decimal("0.00")
+        total_saldo_bancario = Decimal("0.00")
+        for item in saldos_data:
+            conta_id = item.get("conta") or item.get("conta_id")
+            if not conta_id:
+                continue
+            saldo_ant = Decimal(str(item.get("saldo_anterior") or 0))
+            saldo_fin = Decimal(str(item.get("saldo_final") or 0))
+            PeriodoSaldoConta.objects.update_or_create(
+                periodo=periodo,
+                conta_id=conta_id,
+                defaults={
+                    "saldo_anterior": saldo_ant,
+                    "saldo_final": saldo_fin,
+                }
+            )
+            total_saldo_anterior += saldo_ant
+            total_saldo_bancario += saldo_fin
+
+        PeriodoPrestacao.objects.filter(id=periodo.id).update(
+            total_saldo_bancario=total_saldo_bancario
+        )
 
 
 class AuditLogSerializer(serializers.ModelSerializer):

@@ -3,9 +3,11 @@ from decimal import Decimal
 from django.core.management.base import BaseCommand
 from django.db import transaction
 
-from core.models import Condominio, Unidade
+from core.models import Condominio, Unidade, Pessoa, CargoCondominial
 from financeiro.models import (
+    ContaBancaria,
     PeriodoPrestacao,
+    PeriodoSaldoConta,
     ReceitaCota,
     ReceitaExtra,
     Despesa,
@@ -44,15 +46,18 @@ class Command(BaseCommand):
             # 2. Criar as 52 Unidades (Casas 01 a 52)
             unidades_map = {}
             for num in range(1, 53):
-                identificador = f"Casa {num:02d}"
-                unidade, _ = Unidade.objects.get_or_create(
+                identificador = f"CASA {num:02d}"
+                unidade = Unidade.objects.filter(
                     condominio=condominio,
-                    identificador=identificador,
-                    defaults={
-                        "bloco_torre": "Principal",
-                        "fracao_ideal": Decimal("0.019230"), # ~ 1/52
-                    }
-                )
+                    identificador__iexact=identificador
+                ).first()
+                if not unidade:
+                    unidade = Unidade.objects.create(
+                        condominio=condominio,
+                        identificador=identificador,
+                        bloco_torre="PRINCIPAL",
+                        fracao_ideal=Decimal("0.019230"),
+                    )
                 unidades_map[num] = unidade
 
             self.stdout.write(self.style.SUCCESS(f"52 Unidades conferidas e associadas."))
@@ -79,6 +84,73 @@ class Command(BaseCommand):
                     "sindico_cpf": "447.260.903-72",
                     "data_assinatura": date(2026, 10, 29),
                     "status": PeriodoPrestacao.StatusPeriodo.ABERTO,
+                }
+            )
+
+            # 3.1 Contas Bancárias & Saldos Mestre-Detalhe
+            conta_cc, _ = ContaBancaria.objects.get_or_create(
+                condominio=condominio,
+                descricao="Conta Corrente Inter",
+                defaults={
+                    "banco_nome": "Banco Inter",
+                    "tipo_conta": ContaBancaria.TipoConta.CORRENTE,
+                    "agencia": "0001-9",
+                    "conta": "1029384-7",
+                    "ordem": 1,
+                }
+            )
+            conta_cdb, _ = ContaBancaria.objects.get_or_create(
+                condominio=condominio,
+                descricao="Aplicação CDB Inter",
+                defaults={
+                    "banco_nome": "Banco Inter",
+                    "tipo_conta": ContaBancaria.TipoConta.APLICACAO,
+                    "agencia": "0001-9",
+                    "conta": "1029384-7",
+                    "ordem": 2,
+                }
+            )
+            conta_porquinho, _ = ContaBancaria.objects.get_or_create(
+                condominio=condominio,
+                descricao="Porquinho Reserva (Férias e 13º)",
+                defaults={
+                    "banco_nome": "Banco Inter",
+                    "tipo_conta": ContaBancaria.TipoConta.RESERVA,
+                    "agencia": "0001-9",
+                    "conta": "1029384-7",
+                    "ordem": 3,
+                }
+            )
+
+            PeriodoSaldoConta.objects.update_or_create(
+                periodo=periodo,
+                conta=conta_cc,
+                defaults={"saldo_anterior": Decimal("525.74"), "saldo_final": Decimal("2405.71")}
+            )
+            PeriodoSaldoConta.objects.update_or_create(
+                periodo=periodo,
+                conta=conta_cdb,
+                defaults={"saldo_anterior": Decimal("41362.52"), "saldo_final": Decimal("41362.52")}
+            )
+            PeriodoSaldoConta.objects.update_or_create(
+                periodo=periodo,
+                conta=conta_porquinho,
+                defaults={"saldo_anterior": Decimal("3113.70"), "saldo_final": Decimal("3113.70")}
+            )
+
+            # 3.2 Garantir Mandato de Síndico
+            sindico_pessoa, _ = Pessoa.objects.get_or_create(
+                cpf="447.260.903-72",
+                defaults={"nome": "JOSÉ MARTINS DA SILVA FILHO"}
+            )
+            CargoCondominial.objects.update_or_create(
+                condominio=condominio,
+                cargo=CargoCondominial.TipoCargo.SINDICO,
+                ativo=True,
+                defaults={
+                    "pessoa": sindico_pessoa,
+                    "data_inicio": date(2026, 1, 1),
+                    "isento_condominio": False,
                 }
             )
 
@@ -234,7 +306,9 @@ class Command(BaseCommand):
                     data_pagamento=date(2026, 10, 15),
                 )
 
-            # 8. Fechar o período e gerar Snapshot imutável
+            # 8. Fechar o período e gerar Snapshot imutável (reabre temporariamente para atualização se reexecutado)
+            periodo.status = PeriodoPrestacao.StatusPeriodo.ABERTO
+            periodo.save()
             totais = fechar_periodo_prestacao(periodo)
 
             # Publicar período para acesso de todos os moradores

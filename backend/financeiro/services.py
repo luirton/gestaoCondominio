@@ -20,8 +20,8 @@ def calcular_totais_periodo(periodo: PeriodoPrestacao):
     Executa o cálculo preciso e reproduzível das regras da planilha.
     Retorna um dicionário com todos os valores totalizados.
     """
-    # 1. Cotas Regulares: soma das cotas pagas no período
-    cotas_pagas = periodo.cotas.filter(data_pagamento__isnull=False)
+    # 1. Cotas Regulares: soma das cotas pagas no período (exclui isentos de condomínio)
+    cotas_pagas = periodo.cotas.filter(data_pagamento__isnull=False, isento=False)
     total_cotas_regulares = Decimal("0.00")
     for c in cotas_pagas:
         if c.cota is not None:
@@ -45,18 +45,26 @@ def calcular_totais_periodo(periodo: PeriodoPrestacao):
 
     total_despesas = total_despesas_fixas + total_despesas_variaveis
 
-    # 4. Saldos Anteriores
-    saldo_anterior_cc = Decimal(str(periodo.saldo_anterior_cc))
-    saldo_anterior_aplicacao = Decimal(str(periodo.saldo_anterior_aplicacao))
-    saldo_anterior_porquinho = Decimal(str(periodo.saldo_anterior_porquinho))
-    saldo_anterior_total = saldo_anterior_cc + saldo_anterior_aplicacao + saldo_anterior_porquinho
+    # 4. Saldos Anteriores (Mestre-Detalhe ou legado)
+    saldos_contas_qs = periodo.saldos_contas.select_related("conta").all()
+    if saldos_contas_qs.exists():
+        saldo_anterior_total = sum((Decimal(str(s.saldo_anterior)) for s in saldos_contas_qs), Decimal("0.00"))
+        total_saldo_bancario = sum((Decimal(str(s.saldo_final)) for s in saldos_contas_qs), Decimal("0.00"))
+        saldo_anterior_cc = sum((Decimal(str(s.saldo_anterior)) for s in saldos_contas_qs if s.conta.tipo_conta == "CORRENTE"), Decimal("0.00"))
+        saldo_anterior_aplicacao = sum((Decimal(str(s.saldo_anterior)) for s in saldos_contas_qs if s.conta.tipo_conta == "APLICACAO"), Decimal("0.00"))
+        saldo_anterior_porquinho = sum((Decimal(str(s.saldo_anterior)) for s in saldos_contas_qs if s.conta.tipo_conta in ["RESERVA", "POUPANCA"]), Decimal("0.00"))
+    else:
+        saldo_anterior_cc = Decimal(str(periodo.saldo_anterior_cc))
+        saldo_anterior_aplicacao = Decimal(str(periodo.saldo_anterior_aplicacao))
+        saldo_anterior_porquinho = Decimal(str(periodo.saldo_anterior_porquinho))
+        saldo_anterior_total = saldo_anterior_cc + saldo_anterior_aplicacao + saldo_anterior_porquinho
+        total_saldo_bancario = Decimal(str(periodo.total_saldo_bancario))
 
     # 5. Subtotal e Saldo Mês
     subtotal = saldo_anterior_total + total_receitas
     saldo_mes = subtotal - total_despesas
 
     # 6. Conferência de Saldo Bancário e Diferença
-    total_saldo_bancario = Decimal(str(periodo.total_saldo_bancario))
     diferenca_saldo = saldo_mes - total_saldo_bancario
 
     cota_padrao = Decimal(str(periodo.valor_cota_padrao))
@@ -155,26 +163,56 @@ def fechar_periodo_prestacao(periodo: PeriodoPrestacao, usuario=None):
 def gerar_cotas_iniciais(periodo: PeriodoPrestacao):
     """
     Gera as cotas para todas as unidades ativas do condomínio para o período.
+    Verifica se ocupantes/responsáveis das unidades possuem mandato ativo com isenção (isento_condominio=True).
     """
+    from core.models import CargoCondominial
+
     unidades = periodo.condominio.unidades.all().order_by("bloco_torre", "identificador")
     criadas = 0
 
+    # Busca unidades cujos ocupantes possuem mandato ativo com isenção de condomínio
+    # Ex: Síndico ou Subsíndico com isento_condominio=True
+    unidades_isentas_ids = set(
+        CargoCondominial.objects.filter(
+            condominio=periodo.condominio,
+            ativo=True,
+            isento_condominio=True,
+            pessoa__vinculos_unidade__data_fim__isnull=True,
+        ).values_list("pessoa__vinculos_unidade__unidade_id", flat=True)
+    )
+
     for idx, unidade in enumerate(unidades, start=1):
+        is_isento = unidade.id in unidades_isentas_ids
+        status_inicial = ReceitaCota.StatusCota.ISENTO if is_isento else ReceitaCota.StatusCota.PENDENTE
+        obs_inicial = "Isento de taxa de condomínio (Mandato de Gestão)" if is_isento else ""
+        cota_val = Decimal("0.00") if is_isento else None
+        pago_val = Decimal("0.00") if is_isento else None
+
         cota, created = ReceitaCota.objects.get_or_create(
             periodo=periodo,
             unidade=unidade,
             defaults={
                 "numero_ordem": idx,
+                "isento": is_isento,
                 "mes_referencia": periodo.mes_referencia,
                 "data_vencimento": periodo.data_vencimento,
                 "valor_titulo": periodo.valor_cota_padrao,
-                "cota": None,
-                "valor_pago": None,
+                "cota": cota_val,
+                "valor_pago": pago_val,
                 "juros_multa": Decimal("0.00"),
-                "status": ReceitaCota.StatusCota.PENDENTE,
+                "status": status_inicial,
+                "observacao": obs_inicial,
             }
         )
-        if created:
+        if not created and is_isento and not cota.isento:
+            cota.isento = True
+            cota.status = ReceitaCota.StatusCota.ISENTO
+            cota.cota = Decimal("0.00")
+            cota.valor_pago = Decimal("0.00")
+            if not cota.observacao:
+                cota.observacao = obs_inicial
+            cota.save()
+        elif created:
             criadas += 1
 
     return criadas
