@@ -47,7 +47,7 @@ export const financeiroApi = {
 
   // Cotas
   getCotas(params = {}) {
-    return apiClient.get("/financeiro/cotas/", { params })
+    return apiClient.get("/financeiro/cotas/", { params: { page_size: 500, ...params } })
   },
   updateCota(id, data) {
     return apiClient.patch(`/financeiro/cotas/${id}/`, data)
@@ -58,7 +58,7 @@ export const financeiroApi = {
 
   // Receitas Extras
   getReceitasExtras(params = {}) {
-    return apiClient.get("/financeiro/receitas-extras/", { params })
+    return apiClient.get("/financeiro/receitas-extras/", { params: { page_size: 500, ...params } })
   },
   createReceitaExtra(data) {
     return apiClient.post("/financeiro/receitas-extras/", data)
@@ -72,7 +72,7 @@ export const financeiroApi = {
 
   // Despesas
   getDespesas(params = {}) {
-    return apiClient.get("/financeiro/despesas/", { params })
+    return apiClient.get("/financeiro/despesas/", { params: { page_size: 500, ...params } })
   },
   createDespesa(formData) {
     return apiClient.post("/financeiro/despesas/", formData, {

@@ -244,7 +244,7 @@ const form = ref({
 
 const fetchUnidadesDisponiveis = async () => {
   try {
-    const res = await apiClient.get("/unidades/")
+    const res = await apiClient.get("/unidades/", { params: { page_size: 500 } })
     unidadesDisponiveis.value = res.data.results || res.data
   } catch (err) {
     console.error("Erro ao carregar unidades:", err)

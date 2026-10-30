@@ -802,11 +802,12 @@
         const loadAllAux = async () => {
           if (!token.value) return
           try {
+            const auxCfg = { ...getAxiosConfig(), params: { page_size: 1000 } }
             const [rc, rp, ru, rusr] = await Promise.all([
-              axios.get(`${API_URL}/condominios/`, getAxiosConfig()),
-              axios.get(`${API_URL}/pessoas/`, getAxiosConfig()),
-              axios.get(`${API_URL}/unidades/`, getAxiosConfig()),
-              axios.get(`${API_URL}/usuarios/`, getAxiosConfig()),
+              axios.get(`${API_URL}/condominios/`, auxCfg),
+              axios.get(`${API_URL}/pessoas/`, auxCfg),
+              axios.get(`${API_URL}/unidades/`, auxCfg),
+              axios.get(`${API_URL}/usuarios/`, auxCfg),
             ])
             condominiosList.value = rc.data.results || rc.data
             pessoasList.value = rp.data.results || rp.data
@@ -822,7 +823,7 @@
           loading.value = true
           globalMsg.value = ""
           try {
-            const params = {}
+            const params = { page_size: 1000 }
             if (searchQuery.value) params.search = searchQuery.value
             const res = await axios.get(`${API_URL}/${activeTab.value}/`, {
               ...getAxiosConfig(),
