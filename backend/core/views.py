@@ -47,7 +47,7 @@ def get_request_condominios(request):
     Retorna a lista de IDs de condomínios que o usuário pode visualizar.
     - Se superuser e sem filtro: retorna None (indica que vê todos).
     - Se superuser com filtro (header X-Condominio-Id ou query param ?condominio=): retorna [id].
-    - Se usuário regular: retorna apenas os condomínios aos quais ele tem vínculo ativo.
+    - Se usuário regular: retorna condomínios aos quais ele tem vínculo ativo (UsuarioCondominio, Mandato, Unidade, Funcionário).
       Caso especifique um condomínio válido, retorna apenas aquele condomínio.
     """
     user = request.user
@@ -64,7 +64,16 @@ def get_request_condominios(request):
                 pass
         return None
 
-    user_condos = list(user.condominios.filter(ativo=True).values_list("condominio_id", flat=True))
+    user_condos = set(user.condominios.filter(ativo=True).values_list("condominio_id", flat=True))
+    if hasattr(user, "pessoa") and user.pessoa:
+        for cid in user.pessoa.vinculos_unidade.filter(data_fim__isnull=True).values_list("unidade__condominio_id", flat=True):
+            user_condos.add(cid)
+        for cid in user.pessoa.cargos_gestao.filter(ativo=True).values_list("condominio_id", flat=True):
+            user_condos.add(cid)
+        for cid in user.pessoa.dados_funcionario.filter(ativo=True).values_list("condominio_id", flat=True):
+            user_condos.add(cid)
+
+    user_condos = list(user_condos)
     if cond_param:
         try:
             cid = int(cond_param)
@@ -234,6 +243,29 @@ class CurrentUserView(APIView):
             for v in vinculos_qs
         ]
 
+        condos_adicionados = set([v["condominio_id"] for v in vinculos_data])
+        if hasattr(user, "pessoa") and user.pessoa:
+            for cg in user.pessoa.cargos_gestao.filter(ativo=True).select_related("condominio"):
+                if cg.condominio_id not in condos_adicionados:
+                    vinculos_data.append({
+                        "id": f"cargo_{cg.id}",
+                        "condominio_id": cg.condominio.id,
+                        "condominio_nome": cg.condominio.nome,
+                        "perfil_codigo": cg.cargo,
+                        "perfil_nome": cg.get_cargo_display(),
+                    })
+                    condos_adicionados.add(cg.condominio_id)
+            for vu in user.pessoa.vinculos_unidade.filter(data_fim__isnull=True).select_related("unidade__condominio"):
+                if vu.unidade.condominio_id not in condos_adicionados:
+                    vinculos_data.append({
+                        "id": f"vinculo_{vu.id}",
+                        "condominio_id": vu.unidade.condominio.id,
+                        "condominio_nome": vu.unidade.condominio.nome,
+                        "perfil_codigo": "CONDOMINO",
+                        "perfil_nome": "Condômino",
+                    })
+                    condos_adicionados.add(vu.unidade.condominio_id)
+
         perfis = list(set([v["perfil_codigo"] for v in vinculos_data]))
         if user.is_superuser:
             perfil_principal = "SINDICO"
@@ -287,47 +319,149 @@ class DashboardStatsView(APIView):
         user = request.user
         condos = get_request_condominios(request)
 
+        # Condomínio ativo
         condominios_qs = Condominio.objects.filter(ativo=True)
-        unidades_qs = Unidade.objects.all()
-        pessoas_qs = Pessoa.objects.all()
-        funcionarios_qs = Funcionario.objects.filter(ativo=True)
-        mandatos_qs = CargoCondominial.objects.filter(ativo=True)
-        vinculos_qs = VinculoPessoaUnidade.objects.filter(data_fim__isnull=True)
-
         if condos is not None:
             condominios_qs = condominios_qs.filter(id__in=condos)
-            unidades_qs = unidades_qs.filter(condominio_id__in=condos)
-            funcionarios_qs = funcionarios_qs.filter(condominio_id__in=condos)
+
+        active_condo = condominios_qs.first()
+
+        # Helper para buscar identificador da unidade da pessoa
+        def get_unidade_str(pessoa, condo_id=None):
+            if not pessoa:
+                return None
+            vu = pessoa.vinculos_unidade.filter(data_fim__isnull=True)
+            if condo_id:
+                vu = vu.filter(unidade__condominio_id=condo_id)
+            v_obj = vu.select_related("unidade").first()
+            if v_obj and v_obj.unidade:
+                bloco = f" ({v_obj.unidade.bloco_torre})" if v_obj.unidade.bloco_torre else ""
+                return f"{v_obj.unidade.identificador}{bloco}"
+            return None
+
+        # 1. Equipe & Gestão (Síndicos, Subsíndicos, Conselheiros)
+        mandatos_qs = CargoCondominial.objects.filter(ativo=True).select_related("pessoa", "condominio")
+        if condos is not None:
             mandatos_qs = mandatos_qs.filter(condominio_id__in=condos)
-            vinculos_qs = vinculos_qs.filter(unidade__condominio_id__in=condos)
-            pessoas_qs = pessoas_qs.filter(
-                Q(vinculos_unidade__unidade__condominio_id__in=condos)
-                | Q(dados_funcionario__condominio_id__in=condos)
-                | Q(cargos_gestao__condominio_id__in=condos)
-                | Q(usuario__condominios__condominio_id__in=condos)
-            ).distinct()
 
-        perfis = get_user_profiles(user)
-        is_gestao = user.is_superuser or any(p in ["SINDICO", "SUBSINDICO", "CONSELHEIRO"] for p in perfis)
+        sindicos = []
+        subsindicos = []
+        conselheiros = []
 
-        if not is_gestao and "CONDOMINO" in perfis and hasattr(user, "pessoa") and user.pessoa:
-            minhas_unidades = user.pessoa.vinculos_unidade.filter(data_fim__isnull=True).count()
-            return Response({
-                "role": "CONDOMINO",
-                "minhas_unidades": minhas_unidades,
-                "meus_vinculos": user.pessoa.vinculos_unidade.count(),
-                "avisos": [
-                    {"id": 1, "titulo": "Bem-vindo ao Portal do Condômino", "data": "Hoje"}
-                ],
+        for m in mandatos_qs.order_by("cargo", "pessoa__nome"):
+            item = {
+                "id": m.id,
+                "nome": m.pessoa.nome,
+                "cargo": m.cargo,
+                "cargo_display": m.get_cargo_display(),
+                "telefone": m.pessoa.telefone or "",
+                "email": m.pessoa.email or "",
+                "data_inicio": m.data_inicio,
+                "data_fim": m.data_fim,
+                "isento_condominio": m.isento_condominio,
+                "unidade": get_unidade_str(m.pessoa, m.condominio_id),
+                "condominio_nome": m.condominio.nome,
+            }
+            if m.cargo == CargoCondominial.TipoCargo.SINDICO:
+                sindicos.append(item)
+            elif m.cargo == CargoCondominial.TipoCargo.SUBSINDICO:
+                subsindicos.append(item)
+            else:
+                conselheiros.append(item)
+
+        # 2. Funcionários
+        funcs_qs = Funcionario.objects.filter(ativo=True).select_related("pessoa", "condominio")
+        if condos is not None:
+            funcs_qs = funcs_qs.filter(condominio_id__in=condos)
+
+        funcionarios = []
+        for f in funcs_qs.order_by("cargo", "pessoa__nome"):
+            funcionarios.append({
+                "id": f.id,
+                "nome": f.pessoa.nome,
+                "cargo": f.cargo,
+                "cargo_display": f.get_cargo_display(),
+                "data_admissao": f.data_admissao,
+                "telefone": f.pessoa.telefone or "",
+                "email": f.pessoa.email or "",
+                "condominio_nome": f.condominio.nome,
             })
 
+        active_role = request.headers.get("X-Active-Role") or request.query_params.get("active_role")
+        if active_role:
+            is_sindico = (active_role == "SINDICO")
+            is_gestao = is_sindico or active_role in ["SUBSINDICO", "CONSELHEIRO"]
+        else:
+            perfis = get_user_profiles(user, request=request)
+            is_sindico = user.is_superuser or "SINDICO" in perfis
+            is_gestao = is_sindico or any(p in ["SUBSINDICO", "CONSELHEIRO"] for p in perfis)
+
+        # 3. Informações da Última Prestação de Contas
+        ultima_prestacao = None
+        try:
+            from financeiro.models import PeriodoPrestacao
+            from financeiro.services import calcular_totais_periodo
+            periodos_qs = PeriodoPrestacao.objects.select_related("condominio").all()
+            if condos is not None:
+                periodos_qs = periodos_qs.filter(condominio_id__in=condos)
+
+            # Para os outros perfis (Condômino, SubSíndico, Conselheiro), carregar SOMENTE prestação PUBLICADA
+            if not is_sindico:
+                periodos_qs = periodos_qs.filter(status=PeriodoPrestacao.StatusPeriodo.PUBLICADO)
+
+            p = periodos_qs.order_by("-data_inicio_prestacao").first()
+            if p:
+                t = calcular_totais_periodo(p)
+                ultima_prestacao = {
+                    "id": p.id,
+                    "condominio_id": p.condominio.id,
+                    "condominio_nome": p.condominio.nome,
+                    "mes_referencia_rotulo": p.mes_referencia_rotulo,
+                    "status": p.status,
+                    "data_inicio_prestacao": p.data_inicio_prestacao,
+                    "data_fim_prestacao": p.data_fim_prestacao,
+                    "data_vencimento": p.data_vencimento,
+                    "data_assinatura": p.data_assinatura,
+                    "sindico_nome": p.sindico_nome,
+                    "valor_cota_padrao": float(p.valor_cota_padrao),
+                    "cota_extra": float(p.cota_extra) if p.cota_extra else None,
+                    "valor_cota_total": float(p.valor_cota_total),
+                    "totais": {
+                        "total_receitas": float(t["total_receitas"]),
+                        "total_cotas_regulares": float(t["total_cotas_regulares"]),
+                        "total_receitas_extras": float(t["total_receitas_extras"]),
+                        "total_despesas": float(t["total_despesas"]),
+                        "total_despesas_fixas": float(t["total_despesas_fixas"]),
+                        "total_despesas_variaveis": float(t["total_despesas_variaveis"]),
+                        "saldo_mes": float(t["saldo_mes"]),
+                        "total_saldo_bancario": float(t["total_saldo_bancario"]),
+                        "diferenca_saldo": float(t["diferenca_saldo"]),
+                        "observacao_diferenca": t.get("observacao_diferenca", ""),
+                    },
+                    "cotas_pagas": p.cotas.filter(data_pagamento__isnull=False, isento=False).count() if is_sindico else None,
+                    "cotas_pendentes": p.cotas.filter(data_pagamento__isnull=True, isento=False).count() if is_sindico else None,
+                    "cotas_isentas": p.cotas.filter(isento=True).count() if is_sindico else None,
+                    "cotas_total": p.cotas.count() if is_sindico else None,
+                }
+        except Exception:
+            pass
+
         return Response({
-            "total_condominios": condominios_qs.count(),
-            "total_unidades": unidades_qs.count(),
-            "total_pessoas": pessoas_qs.count(),
-            "total_funcionarios_ativos": funcionarios_qs.count(),
-            "mandatos_ativos": mandatos_qs.count(),
-            "vinculos_ativos": vinculos_qs.count(),
+            "is_sindico": is_sindico,
+            "is_gestao": is_gestao,
+            "condominio_atual": {
+                "id": active_condo.id if active_condo else None,
+                "nome": active_condo.nome if active_condo else "Condomínio",
+            },
+            "equipe_gestao": {
+                "sindicos": sindicos,
+                "subsindicos": subsindicos,
+                "conselheiros": conselheiros,
+                "funcionarios": funcionarios,
+                "total_mandatos": len(sindicos) + len(subsindicos) + len(conselheiros),
+                "total_funcionarios": len(funcionarios),
+            },
+            "ultima_prestacao": ultima_prestacao,
         })
 
 

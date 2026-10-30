@@ -1,22 +1,42 @@
 from rest_framework import permissions
 
 
-def get_user_profiles(user, condominio_id=None):
+def get_user_profiles(user, request=None, condominio_id=None):
     """
     Retorna uma lista dos códigos de perfil que o usuário possui.
+    Se request for passado com o cabeçalho X-Active-Role, prioriza o papel ativo selecionado.
     Se condominio_id for passado, filtra pelos vínculos com aquele condomínio.
     """
     if not user or not user.is_authenticated:
         return []
-    
+
+    if request:
+        active_role = request.headers.get("X-Active-Role") or getattr(request, "query_params", {}).get("active_role")
+        if active_role:
+            return [active_role]
+
     if user.is_superuser:
         return ["SINDICO", "SUBSINDICO", "CONSELHEIRO", "CONDOMINO", "FUNCIONARIO"]
 
-    vinculos = user.condominios.filter(ativo=True)
-    if condominio_id:
-        vinculos = vinculos.filter(condominio_id=condominio_id)
+    profiles = set(user.condominios.filter(ativo=True).values_list("perfil__codigo", flat=True))
+    if hasattr(user, "pessoa") and user.pessoa:
+        cargos = user.pessoa.cargos_gestao.filter(ativo=True)
+        if condominio_id:
+            cargos = cargos.filter(condominio_id=condominio_id)
+        for c in cargos.values_list("cargo", flat=True):
+            profiles.add(c)
+        vinculos = user.pessoa.vinculos_unidade.filter(data_fim__isnull=True)
+        if condominio_id:
+            vinculos = vinculos.filter(unidade__condominio_id=condominio_id)
+        if vinculos.exists():
+            profiles.add("CONDOMINO")
+        funcs = user.pessoa.dados_funcionario.filter(ativo=True)
+        if condominio_id:
+            funcs = funcs.filter(condominio_id=condominio_id)
+        if funcs.exists():
+            profiles.add("FUNCIONARIO")
         
-    return list(vinculos.values_list("perfil__codigo", flat=True))
+    return list(profiles)
 
 
 class IsSuperUser(permissions.BasePermission):

@@ -148,6 +148,18 @@
           Prestação de Contas
         </router-link>
 
+        <router-link
+          v-if="canViewManagement"
+          to="/prestacao/morador"
+          class="flex items-center px-3 py-2 rounded-lg text-sm font-medium transition-colors"
+          :class="$route.path.startsWith('/prestacao/morador') ? 'bg-blue-600 text-white shadow' : 'text-slate-300 hover:bg-slate-800 hover:text-white'"
+        >
+          <svg class="w-5 h-5 mr-3 text-emerald-400 group-hover:text-emerald-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          Prestações Publicadas
+        </router-link>
+
         <div v-if="canViewManagement" class="pt-3 pb-1 px-3 text-xs font-semibold uppercase tracking-wider text-slate-400">
           Cadastros & Gestão
         </div>
@@ -248,10 +260,22 @@
           class="flex items-center px-3 py-2 rounded-lg text-sm font-medium transition-colors"
           :class="$route.path.startsWith('/prestacao/morador') ? 'bg-blue-600 text-white shadow' : 'text-slate-300 hover:bg-slate-800 hover:text-white'"
         >
-          <svg class="w-5 h-5 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          <svg class="w-5 h-5 mr-3 text-emerald-400 group-hover:text-emerald-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
           Prestações Publicadas
+        </router-link>
+
+        <router-link
+          v-if="!canViewManagement"
+          to="/prestacao/relatorio"
+          class="flex items-center px-3 py-2 rounded-lg text-sm font-medium transition-colors"
+          :class="$route.path.startsWith('/prestacao/relatorio') ? 'bg-blue-600 text-white shadow' : 'text-slate-300 hover:bg-slate-800 hover:text-white'"
+        >
+          <svg class="w-5 h-5 mr-3 text-slate-400 group-hover:text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+          Relatório de Prestação
         </router-link>
       </nav>
 
@@ -294,7 +318,8 @@ const fetchCondos = async () => {
     const res = await apiClient.get("/condominios/")
     listaCondominiosGeral.value = res.data.results || res.data
     if (!authStore.activeCondominioId && listaCondominiosGeral.value.length > 0) {
-      authStore.setActiveCondominio(listaCondominiosGeral.value[0].id)
+      const preferencial = listaCondominiosGeral.value.find(c => c.id === 3) || listaCondominiosGeral.value[0]
+      authStore.setActiveCondominio(preferencial.id)
     }
   } catch (err) {
     console.error("Erro ao buscar condomínios:", err)
@@ -347,23 +372,16 @@ const roleBadgeClass = computed(() => {
 })
 
 const canViewManagement = computed(() => {
-  if (authStore.user?.is_superuser) return true
   return ["SINDICO", "SUBSINDICO", "CONSELHEIRO"].includes(authStore.currentRole)
 })
 
 const canViewUsers = computed(() => {
-  if (authStore.user?.is_superuser) return true
   return ["SINDICO", "SUBSINDICO"].includes(authStore.currentRole)
 })
 
 const handleProfileChange = (role) => {
   authStore.setActiveProfile(role)
-  // Se mudar para condômino, redireciona para a página apropriada
-  if (role === "CONDOMINO") {
-    router.push("/meu-espaco")
-  } else {
-    router.push("/")
-  }
+  window.location.reload()
 }
 
 const handleLogout = () => {

@@ -93,33 +93,43 @@ class PeriodoPrestacao(TimeStampedModel):
 
     # Valores Parametrizados
     valor_cota_padrao = models.DecimalField(
-        max_digits=12,
+        max_digits=18,
         decimal_places=2,
         default=Decimal("380.00"),
         verbose_name="Valor Padrão da Cota (R$)"
     )
-    valor_vaga_padrao = models.DecimalField(
-        max_digits=12,
+    cota_extra = models.DecimalField(
+        max_digits=18,
         decimal_places=2,
-        default=Decimal("100.00"),
-        verbose_name="Valor Padrão da Vaga de Estacionamento (R$)"
+        null=True,
+        blank=True,
+        default=None,
+        verbose_name="Cota Extra (R$)",
+        help_text="Valor da cota extra (opcional). Caso preenchido, soma com o valor da cota condominial."
     )
+
+    @property
+    def valor_cota_total(self):
+        cota = self.valor_cota_padrao or Decimal("0.00")
+        if self.cota_extra:
+            return cota + self.cota_extra
+        return cota
 
     # Saldos Anteriores (aba PRESTAÇÃO / RESULTADO CONTA CORRENTE)
     saldo_anterior_cc = models.DecimalField(
-        max_digits=14,
+        max_digits=18,
         decimal_places=2,
         default=Decimal("0.00"),
         verbose_name="Saldo Anterior Inter (Conta Corrente)"
     )
     saldo_anterior_aplicacao = models.DecimalField(
-        max_digits=14,
+        max_digits=18,
         decimal_places=2,
         default=Decimal("0.00"),
         verbose_name="Saldo Anterior Inter (Aplicação / CDB)"
     )
     saldo_anterior_porquinho = models.DecimalField(
-        max_digits=14,
+        max_digits=18,
         decimal_places=2,
         default=Decimal("0.00"),
         verbose_name="Saldo Porquinho (Férias/13º)"
@@ -127,7 +137,7 @@ class PeriodoPrestacao(TimeStampedModel):
 
     # Fechamento e Saldo Bancário
     total_saldo_bancario = models.DecimalField(
-        max_digits=14,
+        max_digits=18,
         decimal_places=2,
         default=Decimal("0.00"),
         verbose_name="Total do Saldo Bancário Final (R$)"
@@ -187,12 +197,6 @@ class PeriodoPrestacao(TimeStampedModel):
         verbose_name = "Período de Prestação de Contas"
         verbose_name_plural = "Períodos de Prestação de Contas"
         ordering = ["-data_inicio_prestacao"]
-        constraints = [
-            models.UniqueConstraint(
-                fields=["condominio", "data_inicio_prestacao", "data_fim_prestacao"],
-                name="unique_periodo_por_condominio"
-            )
-        ]
 
     def __str__(self):
         return f"{self.mes_referencia_rotulo} ({self.data_inicio_prestacao.strftime('%d/%m/%Y')} a {self.data_fim_prestacao.strftime('%d/%m/%Y')}) - {self.condominio.nome}"
@@ -203,6 +207,16 @@ class PeriodoPrestacao(TimeStampedModel):
                 raise ValidationError({"data_fim_prestacao": "A data final da prestação não pode ser anterior à data inicial."})
         if self.valor_cota_padrao < Decimal("0.00"):
             raise ValidationError({"valor_cota_padrao": "O valor padrão da cota não pode ser negativo."})
+
+    def save(self, *args, **kwargs):
+        if self.mes_referencia and not self.data_assinatura:
+            import calendar
+            from datetime import date
+            ano = self.mes_referencia.year
+            mes = self.mes_referencia.month
+            ultimo_dia = calendar.monthrange(ano, mes)[1]
+            self.data_assinatura = date(ano, mes, ultimo_dia)
+        super().save(*args, **kwargs)
 
 
 class PeriodoSaldoConta(TimeStampedModel):
@@ -222,13 +236,13 @@ class PeriodoSaldoConta(TimeStampedModel):
         verbose_name="Conta Bancária",
     )
     saldo_anterior = models.DecimalField(
-        max_digits=14,
+        max_digits=18,
         decimal_places=2,
         default=Decimal("0.00"),
         verbose_name="Saldo Anterior (R$)"
     )
     saldo_final = models.DecimalField(
-        max_digits=14,
+        max_digits=18,
         decimal_places=2,
         default=Decimal("0.00"),
         verbose_name="Saldo Final Bancário (R$)"
@@ -388,7 +402,7 @@ class ReceitaExtra(TimeStampedModel):
         verbose_name="Unidade Relacionada"
     )
     valor = models.DecimalField(
-        max_digits=12,
+        max_digits=18,
         decimal_places=2,
         verbose_name="Valor (R$)"
     )
@@ -473,7 +487,7 @@ class Despesa(TimeStampedModel):
         verbose_name="Nº Documento / NF / Recibo"
     )
     valor = models.DecimalField(
-        max_digits=12,
+        max_digits=18,
         decimal_places=2,
         verbose_name="Valor (R$)"
     )
@@ -516,46 +530,46 @@ class SaldoPeriodo(TimeStampedModel):
         verbose_name="Período de Prestação"
     )
     saldo_anterior_cc = models.DecimalField(
-        max_digits=14, decimal_places=2, verbose_name="Saldo Anterior CC"
+        max_digits=18, decimal_places=2, verbose_name="Saldo Anterior CC"
     )
     saldo_anterior_aplicacao = models.DecimalField(
-        max_digits=14, decimal_places=2, verbose_name="Saldo Anterior Aplicação"
+        max_digits=18, decimal_places=2, verbose_name="Saldo Anterior Aplicação"
     )
     saldo_anterior_porquinho = models.DecimalField(
-        max_digits=14, decimal_places=2, verbose_name="Saldo Anterior Porquinho"
+        max_digits=18, decimal_places=2, verbose_name="Saldo Anterior Porquinho"
     )
     saldo_anterior_total = models.DecimalField(
-        max_digits=14, decimal_places=2, verbose_name="Saldo Anterior Total"
+        max_digits=18, decimal_places=2, verbose_name="Saldo Anterior Total"
     )
     total_cotas_regulares = models.DecimalField(
-        max_digits=14, decimal_places=2, verbose_name="Total Cotas Regulares"
+        max_digits=18, decimal_places=2, verbose_name="Total Cotas Regulares"
     )
     total_receitas_extras = models.DecimalField(
-        max_digits=14, decimal_places=2, verbose_name="Total Receitas Extras / Outras"
+        max_digits=18, decimal_places=2, verbose_name="Total Receitas Extras / Outras"
     )
     total_receitas = models.DecimalField(
-        max_digits=14, decimal_places=2, verbose_name="Total das Receitas"
+        max_digits=18, decimal_places=2, verbose_name="Total das Receitas"
     )
     subtotal = models.DecimalField(
-        max_digits=14, decimal_places=2, verbose_name="Subtotal (Saldo Anterior + Receitas)"
+        max_digits=18, decimal_places=2, verbose_name="Subtotal (Saldo Anterior + Receitas)"
     )
     total_despesas_fixas = models.DecimalField(
-        max_digits=14, decimal_places=2, verbose_name="Total Despesas Fixas"
+        max_digits=18, decimal_places=2, verbose_name="Total Despesas Fixas"
     )
     total_despesas_variaveis = models.DecimalField(
-        max_digits=14, decimal_places=2, verbose_name="Total Despesas Variáveis"
+        max_digits=18, decimal_places=2, verbose_name="Total Despesas Variáveis"
     )
     total_despesas = models.DecimalField(
-        max_digits=14, decimal_places=2, verbose_name="Total das Despesas"
+        max_digits=18, decimal_places=2, verbose_name="Total das Despesas"
     )
     saldo_mes = models.DecimalField(
-        max_digits=14, decimal_places=2, verbose_name="Saldo Mês (Subtotal - Despesas)"
+        max_digits=18, decimal_places=2, verbose_name="Saldo Mês (Subtotal - Despesas)"
     )
     total_saldo_bancario = models.DecimalField(
-        max_digits=14, decimal_places=2, verbose_name="Total do Saldo Bancário"
+        max_digits=18, decimal_places=2, verbose_name="Total do Saldo Bancário"
     )
     diferenca_saldo = models.DecimalField(
-        max_digits=14, decimal_places=2, default=Decimal("0.00"), verbose_name="Diferença de Saldo"
+        max_digits=18, decimal_places=2, default=Decimal("0.00"), verbose_name="Diferença de Saldo"
     )
     diferenca_em_cotas = models.DecimalField(
         max_digits=8, decimal_places=2, default=Decimal("0.00"), verbose_name="Diferença em Cotas"

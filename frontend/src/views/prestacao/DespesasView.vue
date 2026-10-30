@@ -30,6 +30,19 @@
 
         <button
           v-if="currentPeriodo?.status === 'ABERTO'"
+          @click="gerarDespesasFixasPadrao"
+          :disabled="gerandoFixas"
+          class="inline-flex items-center px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-medium transition shadow-sm disabled:opacity-50"
+          title="Gera automaticamente as 16 despesas fixas padrão para este período"
+        >
+          <svg class="w-4 h-4 mr-1.5" :class="{ 'animate-spin': gerandoFixas }" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
+          </svg>
+          {{ gerandoFixas ? 'Gerando Despesas...' : 'Gerar Despesas Fixas' }}
+        </button>
+
+        <button
+          v-if="currentPeriodo?.status === 'ABERTO'"
           @click="openModal()"
           class="inline-flex items-center px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-sm font-medium transition shadow-sm"
         >
@@ -244,13 +257,17 @@
           <div class="grid grid-cols-2 gap-3">
             <div>
               <label class="block text-xs font-medium text-slate-700 mb-1">Valor (R$)</label>
-              <input
-                type="number"
-                step="0.01"
-                v-model="form.valor"
-                required
-                class="w-full text-xs border rounded-lg p-2 font-bold text-slate-800"
-              />
+              <div class="relative">
+                <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-semibold text-xs">R$</span>
+                <input
+                  type="text"
+                  :value="formatMoney(form.valor)"
+                  @input="onMoneyInput($event, form, 'valor')"
+                  required
+                  placeholder="0,00"
+                  class="w-full pl-9 pr-3 py-2 text-xs border rounded-lg font-bold font-mono focus:ring-1 focus:ring-rose-500 text-slate-800"
+                />
+              </div>
             </div>
 
             <div>
@@ -306,6 +323,7 @@ const router = useRouter()
 
 const loading = ref(true)
 const saving = ref(false)
+const gerandoFixas = ref(false)
 const periodos = ref([])
 const selectedPeriodoId = ref(null)
 const currentPeriodo = ref(null)
@@ -334,8 +352,20 @@ function formatDate(val) {
 }
 
 function formatMoney(val) {
-  if (val === undefined || val === null) return "0,00"
+  if (val === undefined || val === null || val === "") return "0,00"
   return Number(val).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+function onMoneyInput(e, targetObj, key) {
+  let val = e.target.value.replace(/\D/g, "")
+  if (!val) {
+    targetObj[key] = 0
+    e.target.value = "0,00"
+    return
+  }
+  let num = parseInt(val, 10) / 100
+  targetObj[key] = num
+  e.target.value = num.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
 const filteredDespesas = computed(() => {
@@ -405,7 +435,10 @@ function openModal(despesa = null) {
   formFile.value = null
   if (despesa) {
     editingId.value = despesa.id
-    form.value = { ...despesa }
+    form.value = {
+      ...despesa,
+      valor: typeof despesa.valor === "string" ? parseFloat(despesa.valor) || 0 : Number(despesa.valor) || 0
+    }
   } else {
     editingId.value = null
     form.value = {
@@ -421,6 +454,26 @@ function openModal(despesa = null) {
   showModal.value = true
 }
 
+async function gerarDespesasFixasPadrao() {
+  if (!selectedPeriodoId.value) return
+  const periodoNome = currentPeriodo.value?.mes_referencia_rotulo || "selecionado"
+  if (!confirm(`Deseja gerar automaticamente as 16 despesas fixas padrão para a prestação "${periodoNome}"?\n\n(Salários, Antecipação, Férias, Zelador, Transporte, Refeições, 1ª e 2ª parc. 13º, Síndico, GPS, FGTS, Enel, Contador, Coleta e Dedetização)\n\nDespesas com a mesma descrição já existentes não serão duplicadas.`)) {
+    return
+  }
+
+  gerandoFixas.value = true
+  try {
+    const res = await financeiroApi.gerarDespesasFixas(selectedPeriodoId.value)
+    alert(res.data?.message || "Despesas fixas geradas com sucesso!")
+    await loadDespesas()
+  } catch (err) {
+    console.error("Erro ao gerar despesas fixas:", err)
+    alert(err.response?.data?.error || "Erro ao gerar despesas fixas.")
+  } finally {
+    gerandoFixas.value = false
+  }
+}
+
 async function saveDespesa() {
   saving.value = true
   try {
@@ -431,7 +484,10 @@ async function saveDespesa() {
     formData.append("descricao", form.value.descricao)
     formData.append("fornecedor", form.value.fornecedor || "")
     formData.append("numero_documento", form.value.numero_documento || "")
-    formData.append("valor", form.value.valor)
+    const valNumerico = typeof form.value.valor === "number"
+      ? form.value.valor
+      : parseFloat(String(form.value.valor).replace(/\./g, "").replace(",", ".")) || 0
+    formData.append("valor", valNumerico.toFixed(2))
     formData.append("data_pagamento", form.value.data_pagamento)
     if (formFile.value) {
       formData.append("comprovante", formFile.value)
@@ -445,7 +501,13 @@ async function saveDespesa() {
     showModal.value = false
     await loadDespesas()
   } catch (err) {
-    alert("Erro ao salvar despesa.")
+    console.error("Erro ao salvar despesa:", err)
+    const errData = err.response?.data
+    let msg = "Erro ao salvar despesa."
+    if (typeof errData === "object") {
+      msg = Object.entries(errData).map(([k, v]) => `${k}: ${v}`).join(" | ")
+    }
+    alert(msg)
   } finally {
     saving.value = false
   }

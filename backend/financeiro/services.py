@@ -67,7 +67,7 @@ def calcular_totais_periodo(periodo: PeriodoPrestacao):
     # 6. Conferência de Saldo Bancário e Diferença
     diferenca_saldo = saldo_mes - total_saldo_bancario
 
-    cota_padrao = Decimal(str(periodo.valor_cota_padrao))
+    cota_padrao = Decimal(str(periodo.valor_cota_total))
     if cota_padrao > Decimal("0.00"):
         diferenca_em_cotas = round(abs(diferenca_saldo) / cota_padrao, 2)
     else:
@@ -196,7 +196,7 @@ def gerar_cotas_iniciais(periodo: PeriodoPrestacao):
                 "isento": is_isento,
                 "mes_referencia": periodo.mes_referencia,
                 "data_vencimento": periodo.data_vencimento,
-                "valor_titulo": periodo.valor_cota_padrao,
+                "valor_titulo": periodo.valor_cota_total,
                 "cota": cota_val,
                 "valor_pago": pago_val,
                 "juros_multa": Decimal("0.00"),
@@ -366,7 +366,9 @@ def exportar_relatorio_excel(periodo: PeriodoPrestacao) -> io.BytesIO:
     ws_prop.append(["DATAS PRESTAÇÃO INÍCIO MÊS", periodo.data_inicio_prestacao.strftime('%Y-%m-%d')])
     ws_prop.append(["DATAS PRESTAÇÃO FINAL DO MÊS", periodo.data_fim_prestacao.strftime('%Y-%m-%d')])
     ws_prop.append(["VALOR CONDOMINIO", float(periodo.valor_cota_padrao)])
-    ws_prop.append(["VALOR VAGA ESTACIONAMENTO", float(periodo.valor_vaga_padrao)])
+    if periodo.cota_extra:
+        ws_prop.append(["COTA EXTRA", float(periodo.cota_extra)])
+        ws_prop.append(["VALOR TOTAL COTA", float(periodo.valor_cota_total)])
     ws_prop.append(["VALOR RENDIMENTO LÍQUIDO (APLICAÇÃO)", float(periodo.saldo_anterior_aplicacao)])
     ws_prop.append(["PORQUINHO INTER (FÉRIAS/DÉCIMO)", float(periodo.saldo_anterior_porquinho)])
 

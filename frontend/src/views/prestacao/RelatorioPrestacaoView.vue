@@ -19,17 +19,19 @@
       <div class="flex flex-wrap items-center gap-2">
         <!-- Seletor de Período -->
         <select
+          v-if="periodosDisponiveis.length > 0"
           v-model="selectedPeriodoId"
           @change="changePeriodo"
           class="bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm font-semibold text-slate-800 shadow-sm focus:ring-1 focus:ring-blue-500"
         >
-          <option v-for="p in periodos" :key="p.id" :value="p.id">
-            {{ p.mes_referencia_rotulo }} ({{ p.status }})
+          <option v-for="p in periodosDisponiveis" :key="p.id" :value="p.id">
+            {{ p.mes_referencia_rotulo }} {{ authStore.isSindico ? `(${p.status})` : '' }}
           </option>
         </select>
 
         <!-- Botão Exportar PDF -->
         <button
+          v-if="currentPeriodo"
           @click="exportPdf"
           :disabled="exportingPdf"
           class="inline-flex items-center px-3.5 py-2 bg-rose-700 hover:bg-rose-800 text-white rounded-lg text-sm font-medium transition shadow-sm disabled:opacity-50"
@@ -42,6 +44,7 @@
 
         <!-- Botão Exportar Excel -->
         <button
+          v-if="currentPeriodo"
           @click="exportExcel"
           :disabled="exportingExcel"
           class="inline-flex items-center px-3.5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-sm font-medium transition shadow-sm disabled:opacity-50"
@@ -52,27 +55,27 @@
           {{ exportingExcel ? 'Gerando...' : 'Exportar Excel' }}
         </button>
 
-        <!-- Ação Fechar Período -->
+        <!-- Ação Fechar Período (Apenas Síndico) -->
         <button
-          v-if="currentPeriodo?.status === 'ABERTO'"
+          v-if="authStore.isSindico && currentPeriodo?.status === 'ABERTO'"
           @click="fecharPeriodo"
           class="inline-flex items-center px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition shadow-sm"
         >
           Fechar Período
         </button>
 
-        <!-- Ação Publicar -->
+        <!-- Ação Publicar (Apenas Síndico) -->
         <button
-          v-if="currentPeriodo?.status === 'FECHADO'"
+          v-if="authStore.isSindico && currentPeriodo?.status === 'FECHADO'"
           @click="publicarPeriodo"
           class="inline-flex items-center px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-medium transition shadow-sm"
         >
           Publicar para Moradores
         </button>
 
-        <!-- Ação Reabrir (Síndico) -->
+        <!-- Ação Reabrir (Apenas Síndico) -->
         <button
-          v-if="currentPeriodo?.status !== 'ABERTO'"
+          v-if="authStore.isSindico && currentPeriodo?.status !== 'ABERTO'"
           @click="reabrirPeriodo"
           class="inline-flex items-center px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-medium transition border"
         >
@@ -87,8 +90,14 @@
       <p>Consolidando balancete do período...</p>
     </div>
 
-    <div v-else-if="!currentPeriodo" class="p-12 text-center text-slate-500">
-      Nenhum período selecionado.
+    <div v-else-if="!currentPeriodo" class="bg-white border border-slate-200 rounded-2xl p-12 text-center text-slate-500 shadow-sm max-w-xl mx-auto space-y-3">
+      <div class="w-12 h-12 bg-amber-100 text-amber-700 rounded-full flex items-center justify-center mx-auto text-xl">
+        📋
+      </div>
+      <h3 class="text-base font-bold text-slate-800">Nenhuma prestação de contas pública disponível</h3>
+      <p class="text-xs text-slate-500">
+        {{ authStore.isSindico ? 'Não encontramos prestações de contas cadastradas.' : 'As prestações de contas deste condomínio ainda estão em fase de fechamento e serão disponibilizadas assim que forem publicadas pela administração.' }}
+      </p>
     </div>
 
     <!-- FOLHA DO RELATÓRIO OFICIAL (Estilo Papel / Fiel à Planilha Original) -->
@@ -278,12 +287,14 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from "vue"
+import { ref, onMounted, computed, watch } from "vue"
 import { useRoute, useRouter } from "vue-router"
+import { useAuthStore } from "@/stores/auth"
 import financeiroApi from "@/api/financeiro"
 
 const route = useRoute()
 const router = useRouter()
+const authStore = useAuthStore()
 
 const loading = ref(true)
 const exportingPdf = ref(false)
@@ -323,22 +334,56 @@ function formatMoney(val) {
 const despesasFixas = computed(() => despesas.value.filter(d => d.tipo === "FIXA"))
 const despesasVariaveis = computed(() => despesas.value.filter(d => d.tipo === "VARIAVEL"))
 
+const periodosDisponiveis = computed(() => {
+  if (authStore.isSindico) return periodos.value
+  return periodos.value.filter(p => p.status === "PUBLICADO")
+})
+
 async function loadPeriodos() {
-  const res = await financeiroApi.getPeriodos()
-  periodos.value = res.data.results || res.data
-  const pIdParam = route.params.periodoId
-  if (pIdParam) {
-    selectedPeriodoId.value = Number(pIdParam)
-  } else if (periodos.value.length > 0) {
-    selectedPeriodoId.value = periodos.value[0].id
+  try {
+    const res = await financeiroApi.getPeriodos()
+    periodos.value = res.data.results || res.data
+    const disponiveis = periodosDisponiveis.value
+    const pIdParam = route.params.periodoId
+    if (pIdParam && disponiveis.some(p => Number(p.id) === Number(pIdParam))) {
+      selectedPeriodoId.value = Number(pIdParam)
+    } else if (disponiveis.length > 0) {
+      // Prioriza uma prestação publicada ou com movimentação ao invés de período vazio
+      const pub = disponiveis.find(p => p.status === "PUBLICADO") || disponiveis[0]
+      selectedPeriodoId.value = pub.id
+    } else {
+      selectedPeriodoId.value = null
+    }
+  } catch (err) {
+    console.error("Erro ao carregar períodos:", err)
   }
 }
 
 async function loadData() {
-  if (!selectedPeriodoId.value) return
+  if (!selectedPeriodoId.value) {
+    if (periodosDisponiveis.value.length > 0) {
+      const pub = periodosDisponiveis.value.find(p => p.status === "PUBLICADO") || periodosDisponiveis.value[0]
+      selectedPeriodoId.value = pub.id
+    } else {
+      currentPeriodo.value = null
+      return
+    }
+  }
   loading.value = true
   try {
-    currentPeriodo.value = periodos.value.find(p => p.id === selectedPeriodoId.value)
+    const p = periodosDisponiveis.value.find(item => Number(item.id) === Number(selectedPeriodoId.value))
+    if (!p) {
+      if (periodosDisponiveis.value.length > 0) {
+        selectedPeriodoId.value = periodosDisponiveis.value[0].id
+        currentPeriodo.value = periodosDisponiveis.value[0]
+      } else {
+        currentPeriodo.value = null
+        loading.value = false
+        return
+      }
+    } else {
+      currentPeriodo.value = p
+    }
 
     const [totaisRes, despesasRes] = await Promise.all([
       financeiroApi.getTotais(selectedPeriodoId.value),
@@ -348,6 +393,9 @@ async function loadData() {
     despesas.value = despesasRes.data.results || despesasRes.data
   } catch (err) {
     console.error("Erro ao carregar relatório:", err)
+    if (!totais.value?.total_receitas && currentPeriodo.value?.totais) {
+      totais.value = currentPeriodo.value.totais
+    }
   } finally {
     loading.value = false
   }
@@ -357,6 +405,19 @@ function changePeriodo() {
   router.push(`/prestacao/relatorio/${selectedPeriodoId.value}`)
   loadData()
 }
+
+watch(
+  () => route.params.periodoId,
+  (newId) => {
+    if (newId) {
+      selectedPeriodoId.value = Number(newId)
+    } else if (periodosDisponiveis.value.length > 0) {
+      const pub = periodosDisponiveis.value.find(p => p.status === "PUBLICADO") || periodosDisponiveis.value[0]
+      selectedPeriodoId.value = pub.id
+    }
+    loadData()
+  }
+)
 
 async function exportPdf() {
   exportingPdf.value = true

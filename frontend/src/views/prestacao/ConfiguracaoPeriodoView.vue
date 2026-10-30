@@ -59,7 +59,10 @@
               {{ formatDate(p.data_inicio_prestacao) }} a {{ formatDate(p.data_fim_prestacao) }}
             </td>
             <td class="py-3.5 px-4 text-slate-600">
-              {{ formatDate(p.data_vencimento) }} (R$ {{ formatMoney(p.valor_cota_padrao) }})
+              {{ formatDate(p.data_vencimento) }} (R$ {{ formatMoney(p.valor_cota_total || p.valor_cota_padrao) }})
+              <span v-if="p.cota_extra" class="block text-[11px] text-indigo-600 font-medium">
+                (Base: R$ {{ formatMoney(p.valor_cota_padrao) }} + Extra: R$ {{ formatMoney(p.cota_extra) }})
+              </span>
             </td>
             <td class="py-3.5 px-4">
               <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-slate-100 text-slate-700">
@@ -148,25 +151,21 @@
         </div>
 
         <form @submit.prevent="savePeriodo" class="p-6 space-y-6 max-h-[82vh] overflow-y-auto">
-          <!-- Campo Condomínio Vinculado (Bloqueado) -->
+          <!-- Campo Condomínio Vinculado -->
           <div class="p-3 bg-slate-50 rounded-xl border border-slate-200">
             <label class="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1.5">
-              <span>🏢</span> Condomínio Vinculado (Bloqueado para alteração)
+              <span>🏢</span> Condomínio *
             </label>
-            <div class="flex items-center gap-2">
-              <input
-                type="text"
-                :value="condominioNomeAtual"
-                disabled
-                class="w-full text-xs font-bold bg-slate-100 border border-slate-300 rounded-lg p-2 text-slate-800 cursor-not-allowed select-none shadow-xs"
-              />
-              <span class="px-2.5 py-1.5 text-[11px] font-bold bg-slate-200 text-slate-600 rounded-lg whitespace-nowrap border border-slate-300 flex items-center gap-1">
-                <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                </svg>
-                Bloqueado
-              </span>
-            </div>
+            <select
+              v-model="form.condominio"
+              @change="onCondominioChange"
+              required
+              class="w-full text-xs font-bold bg-white border border-slate-300 rounded-lg p-2 text-slate-800 focus:ring-1 focus:ring-blue-500 shadow-xs"
+            >
+              <option v-for="c in condominiosList" :key="c.id" :value="c.id">
+                {{ c.nome }} {{ c.cidade ? `(${c.cidade})` : '' }}
+              </option>
+            </select>
           </div>
 
           <!-- Bloco 0: Seleção Automática pelo Rótulo Calendário -->
@@ -220,6 +219,7 @@
                 <input
                   type="date"
                   v-model="form.mes_referencia"
+                  @change="onMesReferenciaChange"
                   required
                   class="w-full text-xs border rounded-lg p-2 focus:ring-1 focus:ring-blue-500"
                 />
@@ -285,7 +285,7 @@
             </div>
           </div>
 
-          <!-- Bloco 2: Valores Padrão com Máscara -->
+          <!-- Bloco 2: Valores Parametrizados da Cota -->
           <div>
             <h4 class="text-xs font-bold uppercase tracking-wider text-blue-600 mb-3 border-b pb-1">
               2. Valores Parametrizados da Cota
@@ -305,39 +305,56 @@
                 </div>
               </div>
               <div>
-                <label class="block text-xs font-medium text-slate-700 mb-1">Valor Padrão Vaga Estacionamento *</label>
+                <label class="block text-xs font-medium text-slate-700 mb-1">Cota Extra (R$ - Opcional)</label>
                 <div class="relative">
                   <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-semibold text-xs">R$</span>
                   <input
                     type="text"
-                    :value="formatMoney(form.valor_vaga_padrao)"
-                    @input="onMoneyInput($event, form, 'valor_vaga_padrao')"
-                    required
+                    :value="form.cota_extra != null ? formatMoney(form.cota_extra) : ''"
+                    @input="onMoneyInputNullable($event, form, 'cota_extra')"
+                    placeholder="0,00 (Opcional)"
                     class="w-full pl-9 pr-3 py-2 text-xs border rounded-lg font-bold font-mono focus:ring-1 focus:ring-blue-500"
                   />
                 </div>
+                <p v-if="form.cota_extra" class="text-[11px] text-indigo-600 font-medium mt-1">
+                  Cota total somada: R$ {{ formatMoney((Number(form.valor_cota_padrao) || 0) + (Number(form.cota_extra) || 0)) }}
+                </p>
               </div>
             </div>
           </div>
 
           <!-- Bloco 3: Mestre-Detalhe de Saldos por Conta Bancária -->
           <div>
-            <div class="flex items-center justify-between mb-3 border-b pb-1">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3 border-b pb-1">
               <div>
                 <h4 class="text-xs font-bold uppercase tracking-wider text-blue-600">
                   3. Saldos Anteriores & Bancário (Mestre-Detalhe por Conta)
                 </h4>
                 <p class="text-[11px] text-slate-500">
-                  Informe o saldo anterior e o saldo final bancário para cada conta cadastrada.
+                  Saldos anteriores são carregados automaticamente da prestação anterior ao mês de referência.
                 </p>
               </div>
-              <button
-                type="button"
-                @click="abrirModalNovaConta"
-                class="px-2.5 py-1.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded-lg text-xs font-semibold border border-emerald-200 transition flex items-center gap-1 shadow-sm"
-              >
-                + Cadastrar Tipo de Conta
-              </button>
+              <div class="flex items-center gap-2">
+                <button
+                  type="button"
+                  @click="carregarSaldosPeriodoAnterior(true)"
+                  :disabled="loadingSaldosAnt"
+                  class="px-2.5 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-lg text-xs font-semibold border border-blue-200 transition flex items-center gap-1 shadow-sm disabled:opacity-50"
+                  title="Puxar os saldos finais da prestação anterior"
+                >
+                  <svg class="w-3.5 h-3.5" :class="{ 'animate-spin': loadingSaldosAnt }" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  {{ loadingSaldosAnt ? 'Carregando...' : 'Carregar da Prestação Anterior' }}
+                </button>
+                <button
+                  type="button"
+                  @click="abrirModalNovaConta"
+                  class="px-2.5 py-1.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded-lg text-xs font-semibold border border-emerald-200 transition flex items-center gap-1 shadow-sm"
+                >
+                  + Cadastrar Tipo de Conta
+                </button>
+              </div>
             </div>
 
             <div class="border border-slate-200 rounded-xl overflow-hidden shadow-sm">
@@ -407,48 +424,59 @@
             </div>
           </div>
 
-          <!-- Bloco 4: Responsável Síndico -->
+          <!-- Bloco 4: Responsável Síndico (Campos Bloqueados para Edição Manual) -->
           <div>
             <div class="flex items-center justify-between mb-3 border-b pb-1">
-              <h4 class="text-xs font-bold uppercase tracking-wider text-blue-600">
-                4. Assinatura do Síndico
-              </h4>
+              <div>
+                <h4 class="text-xs font-bold uppercase tracking-wider text-blue-600">
+                  4. Assinatura do Síndico
+                </h4>
+                <p class="text-[11px] text-slate-500">
+                  Preenchimento automático do síndico ativo. Bloqueado para edição direta.
+                </p>
+              </div>
               <button
                 type="button"
                 @click="carregarSindicoAtivo"
-                class="text-[11px] px-2.5 py-1 rounded-md bg-blue-50 text-blue-700 hover:bg-blue-100 font-semibold border border-blue-200 transition flex items-center gap-1"
-                title="Carrega automaticamente o nome e CPF do síndico ativo no condomínio"
+                class="text-[11px] px-2.5 py-1 rounded-md bg-blue-50 text-blue-700 hover:bg-blue-100 font-semibold border border-blue-200 transition flex items-center gap-1 shadow-xs"
+                title="Sincroniza automaticamente o nome e CPF do síndico ativo no condomínio"
               >
                 <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                 </svg>
-                Buscar Síndico Ativo
+                Sincronizar Síndico Ativo
               </button>
             </div>
             <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
               <div>
-                <label class="block text-xs font-medium text-slate-700 mb-1">Nome do Síndico</label>
+                <label class="block text-xs font-medium text-slate-700 mb-1">Nome do Síndico (Bloqueado)</label>
                 <input
                   type="text"
-                  v-model="form.sindico_nome"
-                  class="w-full text-xs border rounded-lg p-2 focus:ring-1 focus:ring-blue-500 font-medium"
+                  :value="form.sindico_nome"
+                  readonly
+                  tabindex="-1"
+                  class="w-full text-xs border rounded-lg p-2 bg-slate-100 text-slate-700 font-bold cursor-not-allowed select-none focus:outline-none"
                 />
               </div>
               <div>
-                <label class="block text-xs font-medium text-slate-700 mb-1">CPF do Síndico</label>
+                <label class="block text-xs font-medium text-slate-700 mb-1">CPF do Síndico (Bloqueado)</label>
                 <input
                   type="text"
-                  v-model="form.sindico_cpf"
+                  :value="form.sindico_cpf"
+                  readonly
+                  tabindex="-1"
                   placeholder="000.000.000-00"
-                  class="w-full text-xs border rounded-lg p-2 focus:ring-1 focus:ring-blue-500 font-mono"
+                  class="w-full text-xs border rounded-lg p-2 bg-slate-100 text-slate-700 font-mono font-bold cursor-not-allowed select-none focus:outline-none"
                 />
               </div>
               <div>
-                <label class="block text-xs font-medium text-slate-700 mb-1">Data da Assinatura</label>
+                <label class="block text-xs font-medium text-slate-700 mb-1">Data da Assinatura (Bloqueada)</label>
                 <input
                   type="date"
-                  v-model="form.data_assinatura"
-                  class="w-full text-xs border rounded-lg p-2 focus:ring-1 focus:ring-blue-500"
+                  :value="form.data_assinatura"
+                  readonly
+                  tabindex="-1"
+                  class="w-full text-xs border rounded-lg p-2 bg-slate-100 text-slate-700 font-bold cursor-not-allowed select-none focus:outline-none"
                 />
               </div>
             </div>
@@ -582,6 +610,7 @@ const errorMessage = ref("")
 const seletorMesAno = ref("")
 const contasBancarias = ref([])
 const saldosContasForm = ref([])
+const loadingSaldosAnt = ref(false)
 
 const condominioNomeAtual = computed(() => {
   const condId = form.value.condominio
@@ -616,7 +645,7 @@ const form = ref({
   data_inicio_prestacao: "",
   data_fim_prestacao: "",
   valor_cota_padrao: 380.00,
-  valor_vaga_padrao: 100.00,
+  cota_extra: null,
   saldo_anterior_cc: 0,
   saldo_anterior_aplicacao: 0,
   saldo_anterior_porquinho: 0,
@@ -648,6 +677,29 @@ function onMoneyInput(e, targetObj, key) {
   let num = parseInt(val, 10) / 100
   targetObj[key] = num
   e.target.value = num.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+function onMoneyInputNullable(e, targetObj, key) {
+  let val = e.target.value.replace(/\D/g, "")
+  if (!val) {
+    targetObj[key] = null
+    e.target.value = ""
+    return
+  }
+  let num = parseInt(val, 10) / 100
+  targetObj[key] = num
+  e.target.value = num.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+function onMesReferenciaChange() {
+  if (!form.value.mes_referencia) return
+  const parts = form.value.mes_referencia.split("-")
+  if (parts.length >= 2) {
+    const ano = parseInt(parts[0], 10)
+    const mes = parseInt(parts[1], 10)
+    const ultimoDia = new Date(ano, mes, 0).getDate()
+    form.value.data_assinatura = `${ano}-${String(mes).padStart(2, "0")}-${String(ultimoDia).padStart(2, "0")}`
+  }
 }
 
 const totalSaldoAnteriorCalculado = computed(() => {
@@ -696,8 +748,64 @@ function aplicarPreenchimentoAutomaticoDatas() {
   const proxProxAno = mes >= 11 ? ano + 1 : ano
   form.value.data_prox_vencimento = `${proxProxAno}-${String(proxProxMesIndex + 1).padStart(2, "0")}-05`
 
-  // Data da assinatura: hoje
-  form.value.data_assinatura = new Date().toISOString().substring(0, 10)
+  // Data da assinatura: sempre o último dia do mês de referência
+  form.value.data_assinatura = `${ano}-${String(mes).padStart(2, "0")}-${String(ultimoDia).padStart(2, "0")}`
+
+  // Sempre carrega os saldos da prestação anterior se for um novo período
+  if (!editingId.value) {
+    carregarSaldosPeriodoAnterior(false)
+  }
+}
+
+async function carregarSaldosPeriodoAnterior(notificar = false) {
+  const condId = form.value.condominio || localStorage.getItem("active_condominio_id")
+  if (!condId) return
+  loadingSaldosAnt.value = true
+  try {
+    const res = await financeiroApi.getSaldosPeriodoAnterior({
+      condominio: condId,
+      mes_referencia: form.value.data_inicio_prestacao || form.value.mes_referencia || seletorMesAno.value,
+    })
+    if (res.data?.encontrado && res.data.saldos_contas) {
+      const mapaSaldosAnt = {}
+      for (const sc of res.data.saldos_contas) {
+        mapaSaldosAnt[sc.conta] = Number(sc.saldo_final) || 0
+      }
+      for (const item of saldosContasForm.value) {
+        if (mapaSaldosAnt[item.conta] !== undefined) {
+          item.saldo_anterior = mapaSaldosAnt[item.conta]
+        }
+      }
+      if (res.data.saldo_anterior_cc !== undefined) {
+        form.value.saldo_anterior_cc = Number(res.data.saldo_anterior_cc) || 0
+      }
+      if (res.data.saldo_anterior_aplicacao !== undefined) {
+        form.value.saldo_anterior_aplicacao = Number(res.data.saldo_anterior_aplicacao) || 0
+      }
+      if (res.data.saldo_anterior_porquinho !== undefined) {
+        form.value.saldo_anterior_porquinho = Number(res.data.saldo_anterior_porquinho) || 0
+      }
+      if (notificar) {
+        alert(`Saldos finais da prestação anterior (${res.data.periodo_anterior_rotulo}) carregados com sucesso!`)
+      }
+    } else if (notificar) {
+      alert("Nenhuma prestação anterior localizada para este condomínio.")
+    }
+  } catch (err) {
+    console.error("Erro ao carregar saldos da prestação anterior:", err)
+    if (notificar) alert("Erro ao carregar saldos da prestação anterior.")
+  } finally {
+    loadingSaldosAnt.value = false
+  }
+}
+
+async function onCondominioChange() {
+  await carregarContasBancarias(form.value.condominio)
+  inicializarSaldosContasForm(editingId.value ? form.value : null)
+  await carregarSindicoAtivo()
+  if (!editingId.value) {
+    await carregarSaldosPeriodoAnterior(false)
+  }
 }
 
 async function carregarSindicoAtivo() {
@@ -805,7 +913,7 @@ async function openModal(periodo = null) {
       data_inicio_prestacao: "",
       data_fim_prestacao: "",
       valor_cota_padrao: 380.00,
-      valor_vaga_padrao: 100.00,
+      cota_extra: null,
       saldo_anterior_cc: 0,
       saldo_anterior_aplicacao: 0,
       saldo_anterior_porquinho: 0,
@@ -813,12 +921,13 @@ async function openModal(periodo = null) {
       data_saldo_bancario: "",
       sindico_nome: "",
       sindico_cpf: "",
-      data_assinatura: new Date().toISOString().substring(0, 10),
+      data_assinatura: "",
     }
 
     aplicarPreenchimentoAutomaticoDatas()
     await carregarSindicoAtivo()
     inicializarSaldosContasForm(null)
+    await carregarSaldosPeriodoAnterior(false)
   }
   showModal.value = true
 }
@@ -867,19 +976,19 @@ async function savePeriodo() {
   saving.value = true
   errorMessage.value = ""
 
-  // Prepara payload com master-detail saldos_contas garantindo valor 0 se não informado
+  // Prepara payload com master-detail saldos_contas arredondando para 2 casas decimais
   const payload = {
     ...form.value,
-    total_saldo_bancario: Number(totalSaldoFinalCalculado.value) || 0,
-    saldo_anterior_cc: Number(form.value.saldo_anterior_cc) || 0,
-    saldo_anterior_aplicacao: Number(form.value.saldo_anterior_aplicacao) || 0,
-    saldo_anterior_porquinho: Number(form.value.saldo_anterior_porquinho) || 0,
-    valor_cota_padrao: Number(form.value.valor_cota_padrao) || 0,
-    valor_vaga_padrao: Number(form.value.valor_vaga_padrao) || 0,
+    total_saldo_bancario: Number(Number(totalSaldoFinalCalculado.value || 0).toFixed(2)),
+    saldo_anterior_cc: Number(Number(form.value.saldo_anterior_cc || 0).toFixed(2)),
+    saldo_anterior_aplicacao: Number(Number(form.value.saldo_anterior_aplicacao || 0).toFixed(2)),
+    saldo_anterior_porquinho: Number(Number(form.value.saldo_anterior_porquinho || 0).toFixed(2)),
+    valor_cota_padrao: Number(Number(form.value.valor_cota_padrao || 0).toFixed(2)),
+    cota_extra: form.value.cota_extra != null && form.value.cota_extra > 0 ? Number(Number(form.value.cota_extra).toFixed(2)) : null,
     saldos_contas: saldosContasForm.value.map(s => ({
       conta: s.conta,
-      saldo_anterior: Number(s.saldo_anterior) || 0,
-      saldo_final: Number(s.saldo_final) || 0,
+      saldo_anterior: Number(Number(s.saldo_anterior || 0).toFixed(2)),
+      saldo_final: Number(Number(s.saldo_final || 0).toFixed(2)),
     })),
   }
 
@@ -934,7 +1043,8 @@ async function excluirPeriodo(periodo) {
 }
 
 async function gerarCotas(periodo) {
-  if (!confirm(`Deseja gerar as cotas de R$ ${periodo.valor_cota_padrao} para todas as unidades ativas? (Titulares com mandatos isentos receberão status ISENTO)`)) return
+  const valorExibir = formatMoney(periodo.valor_cota_total || periodo.valor_cota_padrao)
+  if (!confirm(`Deseja gerar as cotas de R$ ${valorExibir} para todas as unidades ativas? (Titulares com mandatos isentos receberão status ISENTO)`)) return
   try {
     const res = await financeiroApi.gerarCotas(periodo.id)
     alert(res.data.message)

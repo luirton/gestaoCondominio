@@ -14,6 +14,28 @@ from .models import (
 from .services import calcular_totais_periodo
 
 
+def parse_decimal_safe(val, default=Decimal("0.00")):
+    if val is None or val == "" or val == "null":
+        return default
+    if isinstance(val, (int, float)):
+        return Decimal(f"{val:.2f}")
+    if isinstance(val, Decimal):
+        return val
+    if isinstance(val, str):
+        clean_str = val.replace("R$", "").strip()
+        if not clean_str:
+            return default
+        if "," in clean_str and "." in clean_str:
+            clean_str = clean_str.replace(".", "").replace(",", ".")
+        elif "," in clean_str:
+            clean_str = clean_str.replace(",", ".")
+        try:
+            return Decimal(clean_str).quantize(Decimal("0.01"))
+        except Exception:
+            return default
+    return default
+
+
 class ContaBancariaSerializer(serializers.ModelSerializer):
     tipo_display = serializers.CharField(source="get_tipo_conta_display", read_only=True)
     condominio_nome = serializers.CharField(source="condominio.nome", read_only=True)
@@ -40,10 +62,10 @@ class ContaBancariaSerializer(serializers.ModelSerializer):
 class PeriodoSaldoContaSerializer(serializers.ModelSerializer):
     periodo = serializers.PrimaryKeyRelatedField(read_only=True)
     saldo_anterior = serializers.DecimalField(
-        max_digits=14, decimal_places=2, required=False, default=Decimal("0.00"), allow_null=True
+        max_digits=18, decimal_places=2, required=False, default=Decimal("0.00"), allow_null=True
     )
     saldo_final = serializers.DecimalField(
-        max_digits=14, decimal_places=2, required=False, default=Decimal("0.00"), allow_null=True
+        max_digits=18, decimal_places=2, required=False, default=Decimal("0.00"), allow_null=True
     )
     conta_descricao = serializers.CharField(source="conta.descricao", read_only=True)
     conta_banco = serializers.CharField(source="conta.banco_nome", read_only=True)
@@ -67,9 +89,8 @@ class PeriodoSaldoContaSerializer(serializers.ModelSerializer):
     def to_internal_value(self, data):
         data_copy = data.copy() if hasattr(data, "copy") else dict(data)
         for field in ["saldo_anterior", "saldo_final"]:
-            val = data_copy.get(field)
-            if val is None or val == "" or val == "null":
-                data_copy[field] = Decimal("0.00")
+            if field in data_copy:
+                data_copy[field] = parse_decimal_safe(data_copy.get(field), Decimal("0.00"))
         return super().to_internal_value(data_copy)
 
 
@@ -155,6 +176,7 @@ class ReceitaExtraSerializer(serializers.ModelSerializer):
 class DespesaSerializer(serializers.ModelSerializer):
     tipo_display = serializers.CharField(source="get_tipo_display", read_only=True)
     categoria_display = serializers.CharField(source="get_categoria_display", read_only=True)
+    valor = serializers.DecimalField(max_digits=18, decimal_places=2, required=True)
 
     class Meta:
         model = Despesa
@@ -175,6 +197,12 @@ class DespesaSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
+
+    def to_internal_value(self, data):
+        data_copy = data.copy() if hasattr(data, "copy") else dict(data)
+        if "valor" in data_copy:
+            data_copy["valor"] = parse_decimal_safe(data_copy["valor"], Decimal("0.00"))
+        return super().to_internal_value(data_copy)
 
     def validate_valor(self, value):
         if value < Decimal("0.00"):
@@ -199,6 +227,12 @@ class PeriodoPrestacaoSerializer(serializers.ModelSerializer):
     qtd_cotas_pendentes = serializers.SerializerMethodField()
     qtd_cotas_isentas = serializers.SerializerMethodField()
     saldos_contas = PeriodoSaldoContaSerializer(many=True, required=False)
+    total_saldo_bancario = serializers.DecimalField(
+        max_digits=18, decimal_places=2, required=False, allow_null=True
+    )
+    valor_cota_total = serializers.DecimalField(
+        max_digits=18, decimal_places=2, read_only=True
+    )
 
     class Meta:
         model = PeriodoPrestacao
@@ -214,7 +248,8 @@ class PeriodoPrestacaoSerializer(serializers.ModelSerializer):
             "data_inicio_prestacao",
             "data_fim_prestacao",
             "valor_cota_padrao",
-            "valor_vaga_padrao",
+            "cota_extra",
+            "valor_cota_total",
             "saldo_anterior_cc",
             "saldo_anterior_aplicacao",
             "saldo_anterior_porquinho",
@@ -256,6 +291,28 @@ class PeriodoPrestacaoSerializer(serializers.ModelSerializer):
 
     def get_qtd_cotas_isentas(self, obj):
         return obj.cotas.filter(isento=True).count()
+
+    def to_internal_value(self, data):
+        data_copy = data.copy() if hasattr(data, "copy") else dict(data)
+        decimal_fields = [
+            "total_saldo_bancario",
+            "saldo_anterior_cc",
+            "saldo_anterior_aplicacao",
+            "saldo_anterior_porquinho",
+            "valor_cota_padrao",
+        ]
+        for f in decimal_fields:
+            if f in data_copy:
+                data_copy[f] = parse_decimal_safe(data_copy[f], Decimal("0.00"))
+
+        if "cota_extra" in data_copy:
+            val = data_copy["cota_extra"]
+            if val is None or val == "" or val == "null":
+                data_copy["cota_extra"] = None
+            else:
+                data_copy["cota_extra"] = parse_decimal_safe(val, None)
+
+        return super().to_internal_value(data_copy)
 
     def validate(self, attrs):
         dt_ini = attrs.get("data_inicio_prestacao", getattr(self.instance, "data_inicio_prestacao", None))

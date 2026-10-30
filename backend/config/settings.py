@@ -152,4 +152,5 @@ CORS_ALLOW_ALL_ORIGINS = True  # Para desenvolvimento flexível com Vue Vite
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOW_HEADERS = list(default_headers) + [
     "x-condominio-id",
+    "x-active-role",
 ]

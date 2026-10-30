@@ -30,6 +30,9 @@ export const financeiroApi = {
   getSindicoAtivo(condominioId) {
     return apiClient.get("/financeiro/periodos/sindico-ativo/", { params: { condominio_id: condominioId } })
   },
+  getSaldosPeriodoAnterior(params = {}) {
+    return apiClient.get("/financeiro/periodos/saldos-periodo-anterior/", { params })
+  },
   createPeriodo(data) {
     return apiClient.post("/financeiro/periodos/", data)
   },
@@ -41,6 +44,9 @@ export const financeiroApi = {
   },
   gerarCotas(periodoId) {
     return apiClient.post(`/financeiro/periodos/${periodoId}/gerar-cotas/`)
+  },
+  gerarDespesasFixas(periodoId) {
+    return apiClient.post(`/financeiro/periodos/${periodoId}/gerar-despesas-fixas/`)
   },
   fecharPeriodo(periodoId) {
     return apiClient.post(`/financeiro/periodos/${periodoId}/fechar/`)
@@ -115,8 +121,8 @@ export const financeiroApi = {
   },
 
   // Área do Morador
-  getAreaMorador() {
-    return apiClient.get("/financeiro/morador/")
+  getAreaMorador(params = {}) {
+    return apiClient.get("/financeiro/morador/", { params })
   },
 }
 

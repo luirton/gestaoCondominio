@@ -56,7 +56,7 @@ class FinanceiroCalculosTestCase(TestCase):
             data_inicio_prestacao=date(2026, 10, 1),
             data_fim_prestacao=date(2026, 10, 31),
             valor_cota_padrao=Decimal("380.00"),
-            valor_vaga_padrao=Decimal("100.00"),
+            cota_extra=Decimal("50.00"),
             saldo_anterior_cc=Decimal("500.00"),
             saldo_anterior_aplicacao=Decimal("1000.00"),
             saldo_anterior_porquinho=Decimal("200.00"),
@@ -266,7 +266,7 @@ class FinanceiroCalculosTestCase(TestCase):
             "data_inicio_prestacao": "2026-11-01",
             "data_fim_prestacao": "2026-11-30",
             "valor_cota_padrao": "380.00",
-            "valor_vaga_padrao": "100.00",
+            "cota_extra": "50.00",
             "saldos_contas": [
                 {
                     "conta": conta.id,

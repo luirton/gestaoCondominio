@@ -18,6 +18,16 @@ apiClient.interceptors.request.use(
     if (condId) {
       config.headers["X-Condominio-Id"] = condId
     }
+    const activeRole = localStorage.getItem("active_profile")
+    if (activeRole) {
+      config.headers["X-Active-Role"] = activeRole
+      if (!config.params) {
+        config.params = {}
+      }
+      if (!config.params.active_role) {
+        config.params.active_role = activeRole
+      }
+    }
     return config
   },
   (error) => Promise.reject(error)

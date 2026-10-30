@@ -74,7 +74,7 @@ class Command(BaseCommand):
                     "mes_prox_vencimento": "OUTUBRO",
                     "data_prox_vencimento": date(2026, 11, 5),
                     "valor_cota_padrao": Decimal("380.00"),
-                    "valor_vaga_padrao": Decimal("100.00"),
+                    "cota_extra": None,
                     "saldo_anterior_cc": Decimal("525.74"),
                     "saldo_anterior_aplicacao": Decimal("41362.52"),
                     "saldo_anterior_porquinho": Decimal("3113.70"),

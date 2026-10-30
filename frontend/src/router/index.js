@@ -82,7 +82,7 @@ const routes = [
         path: "meu-espaco",
         name: "MeuEspaco",
         component: MeuEspacoView,
-        meta: { allowedRoles: ["CONDOMINO", "SINDICO", "SUBSINDICO"] },
+        meta: { allowedRoles: ["CONDOMINO", "SINDICO", "SUBSINDICO", "CONSELHEIRO"] },
       },
       // Módulo de Prestação de Contas (Financeiro)
       {
@@ -119,7 +119,7 @@ const routes = [
         path: "prestacao/morador",
         name: "PrestacaoMorador",
         component: AreaMoradorPrestacaoView,
-        meta: { allowedRoles: ["CONDOMINO", "SINDICO", "SUBSINDICO"] },
+        meta: { allowedRoles: ["CONDOMINO", "SINDICO", "SUBSINDICO", "CONSELHEIRO"] },
       },
     ],
   },

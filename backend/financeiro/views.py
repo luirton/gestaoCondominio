@@ -7,6 +7,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import SearchFilter, OrderingFilter
 from django.http import HttpResponse
 from django.utils import timezone
+import datetime
 from decimal import Decimal
 
 from core.models import CargoCondominial
@@ -70,6 +71,17 @@ class PeriodoPrestacaoViewSet(viewsets.ModelViewSet):
         qs = PeriodoPrestacao.objects.select_related("condominio", "snapshot_saldo").all()
         if conds is not None:
             qs = qs.filter(condominio_id__in=conds)
+
+        # Para outros perfis (Condômino, SubSíndico, Conselheiro), permitir SOMENTE exibir as prestações PUBLICADAS
+        active_role = self.request.headers.get("X-Active-Role") or self.request.query_params.get("active_role")
+        if active_role:
+            if active_role != "SINDICO":
+                qs = qs.filter(status=PeriodoPrestacao.StatusPeriodo.PUBLICADO)
+        else:
+            user_profiles = get_user_profiles(self.request.user, request=self.request)
+            if not self.request.user.is_superuser and "SINDICO" not in user_profiles:
+                qs = qs.filter(status=PeriodoPrestacao.StatusPeriodo.PUBLICADO)
+
         return qs
 
     def perform_create(self, serializer):
@@ -244,6 +256,138 @@ class PeriodoPrestacaoViewSet(viewsets.ModelViewSet):
             })
         return Response({"nome": "", "cpf": "", "cargo": ""})
 
+    @action(detail=True, methods=["post"], url_path="gerar-despesas-fixas")
+    def gerar_despesas_fixas(self, request, pk=None):
+        periodo = self.get_object()
+        if periodo.status != PeriodoPrestacao.StatusPeriodo.ABERTO:
+            return Response(
+                {"error": "Só é possível gerar despesas para períodos com status ABERTO."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        dt_ref = periodo.mes_referencia or periodo.data_inicio_prestacao
+        mes_ref_str = dt_ref.strftime("%m/%Y")
+
+        primeiro_dia_mes_ref = dt_ref.replace(day=1)
+        ultimo_dia_mes_ant = primeiro_dia_mes_ref - datetime.timedelta(days=1)
+        mes_ant_str = ultimo_dia_mes_ant.strftime("%m/%Y")
+
+        ult_mes_ano_str = f"12/{dt_ref.year}"
+
+        despesas_config = [
+            ("PAGTO. SALÁRIO FUNCIONÁRIOS", f"REF. {mes_ant_str} - PAGTO. SALÁRIO FUNCIONÁRIOS", Despesa.CategoriaDespesa.SALARIO),
+            ("PAGTO. ANTECIPAÇÃO DE SALÁRIO FUNCIONÁRIOS", f"REF. {mes_ref_str} - PAGTO. ANTECIPAÇÃO DE SALÁRIO FUNCIONÁRIOS", Despesa.CategoriaDespesa.ANTECIPACAO_SALARIO),
+            ("PAGTO. SALÁRIO FUNCIONÁRIOS - FÉRIAS", f"REF. {mes_ref_str} - PAGTO. SALÁRIO FUNCIONÁRIOS - FÉRIAS", Despesa.CategoriaDespesa.FERIAS),
+            ("PAGTO. ZELADOR DIARISTA", f"REF. {mes_ref_str} - PAGTO. ZELADOR DIARISTA", Despesa.CategoriaDespesa.ZELADOR_DIARISTA),
+            ("TRANSPORTE FUNCIONÁRIOS", f"REF. {mes_ref_str} - TRANSPORTE FUNCIONÁRIOS", Despesa.CategoriaDespesa.TRANSPORTE),
+            ("REFEIÇÕES FUNCIONÁRIOS", f"REF. {mes_ref_str} - REFEIÇÕES FUNCIONÁRIOS", Despesa.CategoriaDespesa.REFEICAO),
+            ("PAGTO. PRIMEIRA PARC. DÉCIMO", f"REF. {ult_mes_ano_str} 13º - PAGTO. PRIMEIRA PARC. DÉCIMO", Despesa.CategoriaDespesa.DECIMO_TERCEIRO),
+            ("PAGTO. SEGUNDA PARC. DÉCIMO", f"REF. {ult_mes_ano_str} 13º - PAGTO. SEGUNDA PARC. DÉCIMO", Despesa.CategoriaDespesa.DECIMO_TERCEIRO),
+            ("SÍNDICO", f"REF. {mes_ant_str} - SÍNDICO", Despesa.CategoriaDespesa.SINDICO),
+            ("GPS", f"REF. {mes_ant_str} - GPS", Despesa.CategoriaDespesa.GPS),
+            ("GPS DÉCIMO", f"REF. {ult_mes_ano_str} 13º - GPS DÉCIMO", Despesa.CategoriaDespesa.GPS),
+            ("FGTS", f"REF. {mes_ant_str} - FGTS", Despesa.CategoriaDespesa.FGTS),
+            ("ENEL", f"REF. {mes_ref_str} - ENEL", Despesa.CategoriaDespesa.ENEL),
+            ("CIRO AVILA DE SOUSA (CONTADOR)", f"REF. {mes_ref_str} - CIRO AVILA DE SOUSA (CONTADOR)", Despesa.CategoriaDespesa.CONTABILIDADE),
+            ("SERVIÇO DE COLETA DE RESÍDUOS", f"REF. {mes_ref_str} - SERVIÇO DE COLETA DE RESÍDUOS", Despesa.CategoriaDespesa.COLETA_RESIDUOS),
+            ("SERVIÇO DE DEDETIZAÇÃO", f"REF. {mes_ref_str} - SERVIÇO DE DEDETIZAÇÃO", Despesa.CategoriaDespesa.DEDETIZACAO),
+        ]
+
+        fornecedores_padrao = {
+            "ENEL": "Enel Ceará",
+            "CIRO AVILA DE SOUSA (CONTADOR)": "Ciro Avila de Sousa",
+            "GPS": "Receita Federal",
+            "GPS DÉCIMO": "Receita Federal",
+            "FGTS": "Caixa Econômica Federal",
+            "SÍNDICO": periodo.sindico_nome or "Síndico",
+        }
+
+        dt_pagto = periodo.data_inicio_prestacao or timezone.now().date()
+        criadas = 0
+
+        for chave, descricao_formatada, categoria in despesas_config:
+            fornecedor = fornecedores_padrao.get(chave, "")
+            obj, created = Despesa.objects.get_or_create(
+                periodo=periodo,
+                descricao=descricao_formatada,
+                defaults={
+                    "tipo": Despesa.TipoDespesa.FIXA,
+                    "categoria": categoria,
+                    "fornecedor": fornecedor,
+                    "valor": Decimal("0.00"),
+                    "data_pagamento": dt_pagto,
+                },
+            )
+            if created:
+                criadas += 1
+
+        return Response({
+            "message": f"{criadas} despesas fixas geradas com sucesso para {periodo.mes_referencia_rotulo}.",
+            "criadas": criadas,
+            "total_fixas": periodo.despesas.filter(tipo=Despesa.TipoDespesa.FIXA).count(),
+        })
+
+    @action(detail=False, methods=["get"], url_path="saldos-periodo-anterior")
+    def saldos_periodo_anterior(self, request):
+        """
+        Retorna os saldos finais da prestação anterior ao mês de referência informado para o condomínio.
+        """
+        condominio_id = request.query_params.get("condominio") or request.query_params.get("condominio_id")
+        data_ref_str = request.query_params.get("mes_referencia") or request.query_params.get("data_inicio")
+
+        if not condominio_id:
+            conds = get_request_condominios(request)
+            if conds:
+                condominio_id = conds[0]
+
+        if not condominio_id:
+            return Response({"error": "Condomínio não informado."}, status=status.HTTP_400_BAD_REQUEST)
+
+        qs = PeriodoPrestacao.objects.filter(condominio_id=condominio_id)
+        if data_ref_str:
+            try:
+                if len(data_ref_str) == 7:
+                    ano, mes = map(int, data_ref_str.split("-"))
+                    dt_limite = datetime.date(ano, mes, 1)
+                else:
+                    dt_limite = datetime.date.fromisoformat(data_ref_str)
+                qs = qs.filter(data_inicio_prestacao__lt=dt_limite)
+            except Exception:
+                pass
+
+        periodo_ant = qs.order_by("-data_inicio_prestacao", "-id").first()
+        if not periodo_ant:
+            return Response({
+                "encontrado": False,
+                "mensagem": "Nenhuma prestação anterior encontrada.",
+                "saldos_contas": [],
+            })
+
+        saldos_contas = []
+        for sc in periodo_ant.saldos_contas.select_related("conta").all():
+            saldos_contas.append({
+                "conta": sc.conta_id,
+                "conta_id": sc.conta_id,
+                "banco_nome": sc.conta.banco_nome,
+                "descricao": sc.conta.descricao,
+                "tipo_display": sc.conta.get_tipo_conta_display(),
+                "agencia": sc.conta.agencia,
+                "conta_num": sc.conta.conta,
+                "saldo_anterior": sc.saldo_anterior,
+                "saldo_final": sc.saldo_final,
+            })
+
+        return Response({
+            "encontrado": True,
+            "periodo_anterior_id": periodo_ant.id,
+            "periodo_anterior_rotulo": periodo_ant.mes_referencia_rotulo,
+            "saldo_anterior_cc": periodo_ant.saldo_anterior_cc,
+            "saldo_anterior_aplicacao": periodo_ant.saldo_anterior_aplicacao,
+            "saldo_anterior_porquinho": periodo_ant.saldo_anterior_porquinho,
+            "total_saldo_bancario": periodo_ant.total_saldo_bancario,
+            "saldos_contas": saldos_contas,
+        })
+
 
 class ReceitaCotaViewSet(viewsets.ModelViewSet):
     serializer_class = ReceitaCotaSerializer
@@ -382,6 +526,15 @@ class DespesaViewSet(viewsets.ModelViewSet):
         qs = Despesa.objects.select_related("periodo").all()
         if conds is not None:
             qs = qs.filter(periodo__condominio_id__in=conds)
+
+        # Se não for síndico, despesas só podem ser consultadas se o período for PUBLICADO
+        active_role = self.request.headers.get("X-Active-Role") or self.request.query_params.get("active_role")
+        if active_role:
+            if active_role != "SINDICO":
+                qs = qs.filter(periodo__status=PeriodoPrestacao.StatusPeriodo.PUBLICADO)
+        elif not self.request.user.is_superuser and "SINDICO" not in get_user_profiles(self.request.user, request=self.request):
+            qs = qs.filter(periodo__status=PeriodoPrestacao.StatusPeriodo.PUBLICADO)
+
         return qs
 
 
@@ -447,10 +600,23 @@ class AreaMoradorPrestacaoView(APIView):
             )
 
         conds = get_request_condominios(request)
+        cond_param = request.headers.get("X-Condominio-Id") or request.query_params.get("condominio")
+
         periodos_publicados = PeriodoPrestacao.objects.filter(
             status=PeriodoPrestacao.StatusPeriodo.PUBLICADO
-        )
-        if conds is not None:
+        ).select_related("condominio")
+
+        if cond_param:
+            try:
+                cid = int(cond_param)
+                if user.is_superuser or conds is None or cid in conds:
+                    periodos_publicados = periodos_publicados.filter(condominio_id=cid)
+                elif conds is not None:
+                    periodos_publicados = periodos_publicados.filter(condominio_id__in=conds)
+            except (ValueError, TypeError):
+                if conds is not None:
+                    periodos_publicados = periodos_publicados.filter(condominio_id__in=conds)
+        elif conds is not None:
             periodos_publicados = periodos_publicados.filter(condominio_id__in=conds)
 
         lista_prestas = []
@@ -458,14 +624,29 @@ class AreaMoradorPrestacaoView(APIView):
             t = calcular_totais_periodo(p)
             lista_prestas.append({
                 "id": p.id,
+                "condominio_id": p.condominio.id,
+                "condominio_nome": p.condominio.nome,
                 "mes_referencia_rotulo": p.mes_referencia_rotulo,
+                "status": p.status,
                 "data_inicio": p.data_inicio_prestacao,
                 "data_fim": p.data_fim_prestacao,
-                "total_receitas": t["total_receitas"],
-                "total_despesas": t["total_despesas"],
-                "saldo_mes": t["saldo_mes"],
+                "data_vencimento": p.data_vencimento,
                 "data_publicacao": p.publicado_em,
                 "sindico_nome": p.sindico_nome,
+                "valor_cota_padrao": float(p.valor_cota_padrao),
+                "cota_extra": float(p.cota_extra) if p.cota_extra else None,
+                "valor_cota_total": float(p.valor_cota_total),
+                "total_receitas": float(t["total_receitas"]),
+                "total_cotas_regulares": float(t["total_cotas_regulares"]),
+                "total_receitas_extras": float(t["total_receitas_extras"]),
+                "total_despesas": float(t["total_despesas"]),
+                "total_despesas_fixas": float(t["total_despesas_fixas"]),
+                "total_despesas_variaveis": float(t["total_despesas_variaveis"]),
+                "saldo_mes": float(t["saldo_mes"]),
+                "total_saldo_bancario": float(t["total_saldo_bancario"]),
+                "diferenca_saldo": float(t["diferenca_saldo"]),
+                "cotas_pagas": p.cotas.filter(data_pagamento__isnull=False, isento=False).count(),
+                "cotas_total": p.cotas.count(),
             })
 
         # Cotas do morador
