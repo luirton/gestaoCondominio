@@ -59,9 +59,12 @@
         class="py-3 px-6 text-sm font-bold border-b-2 transition flex items-center gap-2"
         :class="activeTab === 'cotas' ? 'border-emerald-600 text-emerald-700' : 'border-transparent text-slate-500 hover:text-slate-700'"
       >
-        <span>Cotas do Mês ({{ cotas.length }} Unidades)</span>
+        <span>Cotas do Mês ({{ totalCotasPagantesCount }} a Cobrar)</span>
         <span class="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 font-normal">
           {{ cotasPagasCount }} pagas
+        </span>
+        <span v-if="cotasPendentesCount > 0" class="text-xs px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 font-medium">
+          {{ cotasPendentesCount }} pendente{{ cotasPendentesCount > 1 ? 's' : '' }}
         </span>
         <span v-if="cotasIsentasCount > 0" class="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 font-bold">
           {{ cotasIsentasCount }} isenta{{ cotasIsentasCount > 1 ? 's' : '' }}
@@ -610,6 +613,10 @@ function toggleSelectAll(e) {
 
 const cotasPagasCount = computed(() => {
   return cotas.value.filter(c => c.data_pagamento && !c.isento).length
+})
+
+const cotasPendentesCount = computed(() => {
+  return cotas.value.filter(c => !c.data_pagamento && !c.isento).length
 })
 
 const cotasIsentasCount = computed(() => {

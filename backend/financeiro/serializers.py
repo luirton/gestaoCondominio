@@ -223,6 +223,7 @@ class PeriodoPrestacaoSerializer(serializers.ModelSerializer):
     totais = serializers.SerializerMethodField()
     snapshot = SaldoPeriodoSerializer(source="snapshot_saldo", read_only=True)
     qtd_cotas_total = serializers.SerializerMethodField()
+    qtd_cotas_unidades = serializers.SerializerMethodField()
     qtd_cotas_pagas = serializers.SerializerMethodField()
     qtd_cotas_pendentes = serializers.SerializerMethodField()
     qtd_cotas_isentas = serializers.SerializerMethodField()
@@ -267,6 +268,7 @@ class PeriodoPrestacaoSerializer(serializers.ModelSerializer):
             "snapshot",
             "saldos_contas",
             "qtd_cotas_total",
+            "qtd_cotas_unidades",
             "qtd_cotas_pagas",
             "qtd_cotas_pendentes",
             "qtd_cotas_isentas",
@@ -281,15 +283,23 @@ class PeriodoPrestacaoSerializer(serializers.ModelSerializer):
             return None
 
     def get_qtd_cotas_total(self, obj):
+        # Total de cotas a pagar (exclui isentos)
+        return obj.cotas.filter(isento=False).count()
+
+    def get_qtd_cotas_unidades(self, obj):
+        # Total geral de unidades cadastradas no período
         return obj.cotas.count()
 
     def get_qtd_cotas_pagas(self, obj):
-        return obj.cotas.filter(data_pagamento__isnull=False).count()
+        # Cotas quitadas (exclui isentos)
+        return obj.cotas.filter(data_pagamento__isnull=False, isento=False).count()
 
     def get_qtd_cotas_pendentes(self, obj):
+        # Cotas regulares pendentes (exclui isentos)
         return obj.cotas.filter(data_pagamento__isnull=True, isento=False).count()
 
     def get_qtd_cotas_isentas(self, obj):
+        # Cotas com isenção ativa por mandato
         return obj.cotas.filter(isento=True).count()
 
     def to_internal_value(self, data):

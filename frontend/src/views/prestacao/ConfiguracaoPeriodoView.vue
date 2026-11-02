@@ -89,7 +89,7 @@
             </td>
             <td class="py-3.5 px-4 text-right space-x-1">
               <button
-                v-if="p.status === 'ABERTO' && p.qtd_cotas_total === 0"
+                v-if="p.status === 'ABERTO' && (p.qtd_cotas_unidades === 0 || (p.qtd_cotas_total === 0 && !p.qtd_cotas_isentas))"
                 @click="gerarCotas(p)"
                 class="px-2.5 py-1 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded text-xs font-medium border border-emerald-200 transition"
                 title="Gera cotas para todas as unidades ativas"

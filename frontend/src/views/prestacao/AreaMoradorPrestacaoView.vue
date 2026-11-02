@@ -148,7 +148,13 @@
                 <span class="text-xs text-slate-400 font-normal">/ {{ currentPrestacao.cotas_total }}</span>
               </div>
               <p class="text-[11px] text-slate-500 mt-1">
-                Valor cota: R$ {{ formatMoney(currentPrestacao.valor_cota_total || currentPrestacao.valor_cota_padrao) }}
+                <span class="text-emerald-700 font-semibold">{{ currentPrestacao.cotas_pagas }} quitadas</span>
+                <span v-if="currentPrestacao.cotas_pendentes > 0" class="text-rose-600 font-semibold ml-1">
+                  • {{ currentPrestacao.cotas_pendentes }} pendente{{ currentPrestacao.cotas_pendentes > 1 ? 's' : '' }}
+                </span>
+                <span v-if="currentPrestacao.cotas_isentas > 0" class="text-amber-700 font-medium ml-1">
+                  ({{ currentPrestacao.cotas_isentas }} isenta{{ currentPrestacao.cotas_isentas > 1 ? 's' : '' }})
+                </span>
               </p>
             </div>
           </div>
@@ -227,10 +233,25 @@
 
       <!-- Bloco 2: Minhas Cotas Condominiais (se houver unidades vinculadas ao usuário logado) -->
       <div v-if="minhasCotas.length > 0" class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
-        <div class="p-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+        <div class="p-4 border-b border-slate-200 bg-slate-50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <h2 class="font-bold text-slate-800 text-base">Minhas Cotas Condominiais</h2>
+            <h2 class="font-bold text-slate-800 text-base flex items-center gap-2">
+              <span>🏠</span> Minhas Cotas Condominiais
+            </h2>
             <p class="text-xs text-slate-500">Histórico de pagamento e status da cota da sua unidade.</p>
+          </div>
+
+          <!-- Resumo de status das minhas cotas -->
+          <div class="flex items-center gap-2 text-xs">
+            <span class="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 font-semibold">
+              {{ minhasCotasPagasCount }} quitada{{ minhasCotasPagasCount !== 1 ? 's' : '' }}
+            </span>
+            <span v-if="minhasCotasPendentesCount > 0" class="px-2.5 py-1 rounded-lg bg-rose-50 text-rose-700 border border-rose-200 font-semibold">
+              {{ minhasCotasPendentesCount }} pendente{{ minhasCotasPendentesCount !== 1 ? 's' : '' }}
+            </span>
+            <span v-if="minhasCotasIsentasCount > 0" class="px-2.5 py-1 rounded-lg bg-amber-50 text-amber-800 border border-amber-300 font-semibold">
+              {{ minhasCotasIsentasCount }} isenta{{ minhasCotasIsentasCount !== 1 ? 's' : '' }}
+            </span>
           </div>
         </div>
 
@@ -248,25 +269,71 @@
             </tr>
           </thead>
           <tbody class="divide-y divide-slate-200">
-            <tr v-for="cota in minhasCotas" :key="cota.id" class="hover:bg-slate-50">
-              <td class="py-3 px-4 font-bold text-slate-800">{{ cota.unidade }}</td>
+            <tr
+              v-for="cota in minhasCotas"
+              :key="cota.id"
+              class="hover:bg-slate-50 transition-colors"
+              :class="{
+                'bg-amber-50/40': cota.isento || cota.status === 'ISENTO',
+                'bg-emerald-50/20': cota.status === 'PAGO' && !cota.isento
+              }"
+            >
+              <td class="py-3 px-4 font-bold text-slate-800">
+                <div class="flex items-center gap-1.5">
+                  <span>{{ cota.unidade }}</span>
+                  <span
+                    v-if="cota.isento || cota.status === 'ISENTO'"
+                    class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300"
+                    title="Isenção pelo mandato de gestão condominial"
+                  >
+                    ISENTO
+                  </span>
+                </div>
+              </td>
               <td class="py-3 px-4 text-slate-600 font-medium">{{ cota.periodo_rotulo }}</td>
               <td class="py-3 px-4 text-slate-500">{{ formatDate(cota.data_vencimento) }}</td>
-              <td class="py-3 px-4 text-slate-700">R$ {{ formatMoney(cota.valor_titulo) }}</td>
-              <td class="py-3 px-4 text-slate-600">{{ formatDate(cota.data_pagamento) }}</td>
-              <td class="py-3 px-4 font-bold text-slate-800">
-                {{ cota.valor_pago ? `R$ ${formatMoney(cota.valor_pago)}` : '-' }}
+              <td class="py-3 px-4 text-slate-700 font-mono">
+                <span v-if="cota.isento || cota.status === 'ISENTO'" class="text-amber-800 font-semibold" title="Titular isento pelo mandato">
+                  R$ {{ formatMoney(cota.valor_titulo) }}
+                </span>
+                <span v-else>R$ {{ formatMoney(cota.valor_titulo) }}</span>
+              </td>
+              <td class="py-3 px-4 text-slate-600">
+                <span v-if="cota.isento || cota.status === 'ISENTO'" class="text-amber-700 font-medium italic">Isento</span>
+                <span v-else>{{ formatDate(cota.data_pagamento) }}</span>
+              </td>
+              <td class="py-3 px-4 font-bold text-slate-800 font-mono">
+                <span v-if="cota.isento || cota.status === 'ISENTO'" class="text-amber-800 font-semibold">R$ 0,00</span>
+                <span v-else>{{ cota.valor_pago ? `R$ ${formatMoney(cota.valor_pago)}` : '-' }}</span>
               </td>
               <td class="py-3 px-4">
                 <span
-                  class="px-2 py-0.5 rounded text-[11px] font-bold"
-                  :class="cota.status === 'PAGO' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'"
+                  v-if="cota.isento || cota.status === 'ISENTO'"
+                  class="px-2 py-0.5 rounded text-[11px] font-bold bg-amber-100 text-amber-800 border border-amber-300"
                 >
-                  {{ cota.status }}
+                  ISENTO
+                </span>
+                <span
+                  v-else-if="cota.status === 'PAGO'"
+                  class="px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-100 text-emerald-800"
+                >
+                  PAGO
+                </span>
+                <span
+                  v-else
+                  class="px-2 py-0.5 rounded text-[11px] font-bold bg-rose-100 text-rose-800"
+                >
+                  PENDENTE
                 </span>
               </td>
               <td class="py-3 px-4 text-right">
-                <span v-if="cota.status === 'PAGO'" class="text-emerald-600 font-medium">Quitada</span>
+                <span
+                  v-if="cota.isento || cota.status === 'ISENTO'"
+                  class="text-amber-700 font-semibold flex items-center justify-end gap-1"
+                >
+                  <span>★</span> Isento (Mandato)
+                </span>
+                <span v-else-if="cota.status === 'PAGO'" class="text-emerald-600 font-medium">Quitada</span>
                 <span v-else class="text-rose-600 font-medium">Aguardando Baixa</span>
               </td>
             </tr>
@@ -289,6 +356,18 @@ const selectedPrestacaoId = ref(null)
 const currentPrestacao = computed(() => {
   if (!selectedPrestacaoId.value) return prestacoesPublicadas.value[0] || null
   return prestacoesPublicadas.value.find(p => p.id === selectedPrestacaoId.value) || prestacoesPublicadas.value[0] || null
+})
+
+const minhasCotasPagasCount = computed(() => {
+  return minhasCotas.value.filter(c => c.status === "PAGO" && !c.isento).length
+})
+
+const minhasCotasIsentasCount = computed(() => {
+  return minhasCotas.value.filter(c => c.isento || c.status === "ISENTO").length
+})
+
+const minhasCotasPendentesCount = computed(() => {
+  return minhasCotas.value.filter(c => !c.isento && c.status !== "ISENTO" && c.status !== "PAGO" && !c.data_pagamento).length
 })
 
 function formatDate(val) {

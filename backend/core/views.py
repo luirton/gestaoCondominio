@@ -441,7 +441,8 @@ class DashboardStatsView(APIView):
                     "cotas_pagas": p.cotas.filter(data_pagamento__isnull=False, isento=False).count() if is_sindico else None,
                     "cotas_pendentes": p.cotas.filter(data_pagamento__isnull=True, isento=False).count() if is_sindico else None,
                     "cotas_isentas": p.cotas.filter(isento=True).count() if is_sindico else None,
-                    "cotas_total": p.cotas.count() if is_sindico else None,
+                    "cotas_total": p.cotas.filter(isento=False).count() if is_sindico else None,
+                    "unidades_total": p.cotas.count() if is_sindico else None,
                 }
         except Exception:
             pass

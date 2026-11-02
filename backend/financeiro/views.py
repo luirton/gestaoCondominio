@@ -558,6 +558,8 @@ class DashboardFinanceiroView(APIView):
                 "cotas_pendentes": ultimo_periodo.cotas.filter(data_pagamento__isnull=True, isento=False).count(),
                 "cotas_pagas": ultimo_periodo.cotas.filter(data_pagamento__isnull=False, isento=False).count(),
                 "cotas_isentas": ultimo_periodo.cotas.filter(isento=True).count(),
+                "cotas_total": ultimo_periodo.cotas.filter(isento=False).count(),
+                "unidades_total": ultimo_periodo.cotas.count(),
                 "despesas_sem_comprovante": ultimo_periodo.despesas.filter(comprovante="").count()
             }
 
@@ -647,7 +649,10 @@ class AreaMoradorPrestacaoView(APIView):
                 "total_saldo_bancario": float(t["total_saldo_bancario"]),
                 "diferenca_saldo": float(t["diferenca_saldo"]),
                 "cotas_pagas": p.cotas.filter(data_pagamento__isnull=False, isento=False).count(),
-                "cotas_total": p.cotas.count(),
+                "cotas_pendentes": p.cotas.filter(data_pagamento__isnull=True, isento=False).count(),
+                "cotas_isentas": p.cotas.filter(isento=True).count(),
+                "cotas_total": p.cotas.filter(isento=False).count(),
+                "unidades_total": p.cotas.count(),
             })
 
         # Cotas do morador
@@ -666,7 +671,8 @@ class AreaMoradorPrestacaoView(APIView):
                     "valor_titulo": c.valor_titulo,
                     "data_pagamento": c.data_pagamento,
                     "valor_pago": c.valor_pago,
-                    "status": "PAGO" if c.data_pagamento else "PENDENTE",
+                    "isento": c.isento,
+                    "status": "ISENTO" if c.isento else ("PAGO" if c.data_pagamento else "PENDENTE"),
                     "observacao": c.observacao,
                 })
 

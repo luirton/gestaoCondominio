@@ -367,6 +367,17 @@ class ReceitaCota(TimeStampedModel):
             raise ValidationError({"valor_titulo": "O valor do título não pode ser negativo."})
         if self.valor_pago is not None and self.valor_pago < Decimal("0.00"):
             raise ValidationError({"valor_pago": "O valor pago não pode ser negativo."})
+        if self.isento:
+            self.status = self.StatusCota.ISENTO
+
+    def save(self, *args, **kwargs):
+        if self.isento:
+            self.status = self.StatusCota.ISENTO
+            if not self.observacao:
+                self.observacao = "Isento de taxa de condomínio (Mandato de Gestão)"
+        elif self.status == self.StatusCota.ISENTO and not self.isento:
+            self.status = self.StatusCota.PAGO if self.data_pagamento else self.StatusCota.PENDENTE
+        super().save(*args, **kwargs)
 
 
 class ReceitaExtra(TimeStampedModel):

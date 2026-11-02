@@ -119,6 +119,11 @@
             <span class="text-slate-400 block">Isentas</span>
             <strong class="text-amber-600 text-sm font-bold">{{ periodoAtual.cotas_isentas }}</strong>
           </div>
+          <div v-if="periodoAtual.cotas_total" class="w-px h-6 bg-slate-200"></div>
+          <div v-if="periodoAtual.cotas_total">
+            <span class="text-slate-400 block">Total a Cobrar</span>
+            <strong class="text-slate-700 text-sm font-bold">{{ periodoAtual.cotas_total }}</strong>
+          </div>
           <div class="w-px h-6 bg-slate-200"></div>
           <div>
             <span class="text-slate-400 block">Sem Comprovante</span>
