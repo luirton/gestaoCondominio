@@ -17,7 +17,7 @@
         </p>
       </div>
 
-      <div v-if="authStore.isSindico" class="flex flex-wrap items-center gap-2">
+      <div v-if="authStore.isSindico || authStore.isSubSindico" class="flex flex-wrap items-center gap-2">
         <router-link
           to="/prestacao/periodos"
           class="px-4 py-2 bg-white/10 hover:bg-white/20 backdrop-blur border border-white/20 text-white rounded-xl text-xs font-semibold transition"
@@ -86,14 +86,14 @@
               Ver Prestação Completa →
             </router-link>
             <router-link
-              v-if="authStore.isSindico"
+              v-if="authStore.isSindico || authStore.isSubSindico"
               :to="`/prestacao/pagamentos/${stats.ultima_prestacao.id}`"
               class="inline-flex items-center px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition"
             >
               Pagamentos
             </router-link>
             <router-link
-              v-if="authStore.isSindico"
+              v-if="authStore.isSindico || authStore.isSubSindico"
               :to="`/prestacao/despesas/${stats.ultima_prestacao.id}`"
               class="inline-flex items-center px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition"
             >
@@ -105,7 +105,7 @@
         <!-- Cards Financeiros da Última Prestação -->
         <div
           class="grid grid-cols-1 sm:grid-cols-2 gap-4"
-          :class="authStore.isSindico ? 'lg:grid-cols-4' : 'lg:grid-cols-3'"
+          :class="(authStore.isSindico || authStore.isSubSindico) ? 'lg:grid-cols-4' : 'lg:grid-cols-3'"
         >
           <!-- Receitas -->
           <div class="bg-slate-50/70 border border-slate-200/80 rounded-xl p-4">
@@ -140,8 +140,8 @@
             </p>
           </div>
 
-          <!-- Conciliação e Status Cotas (apenas Síndico) -->
-          <div v-if="authStore.isSindico" class="bg-slate-50/70 border border-slate-200/80 rounded-xl p-4">
+          <!-- Conciliação e Status Cotas (Síndico e Subsíndico) -->
+          <div v-if="authStore.isSindico || authStore.isSubSindico" class="bg-slate-50/70 border border-slate-200/80 rounded-xl p-4">
             <span class="text-[11px] font-bold uppercase tracking-wider text-slate-500 block">Cotas Pagas</span>
             <div class="text-2xl font-extrabold text-slate-800 mt-1 flex items-baseline gap-1">
               <span class="text-emerald-700">{{ stats.ultima_prestacao.cotas_pagas }}</span>
@@ -182,7 +182,7 @@
           </div>
 
           <router-link
-            v-if="authStore.isSindico"
+            v-if="authStore.isSindico || authStore.isSubSindico"
             to="/cargos"
             class="text-xs font-semibold text-blue-600 hover:text-blue-800 hover:underline"
           >
@@ -378,7 +378,7 @@
                 <span>👷</span> Funcionários & Equipe Operacional
               </h4>
               <router-link
-                v-if="authStore.isSindico"
+                v-if="authStore.isSindico || authStore.isSubSindico"
                 to="/funcionarios"
                 class="text-[11px] font-semibold text-blue-600 hover:underline"
               >

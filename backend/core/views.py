@@ -675,3 +675,24 @@ class UsuarioCondominioViewSet(viewsets.ModelViewSet):
         if condos is not None:
             qs = qs.filter(condominio_id__in=condos)
         return qs
+
+    def create(self, request, *args, **kwargs):
+        usuario_id = request.data.get("usuario")
+        condominio_id = request.data.get("condominio")
+        perfil_codigo = request.data.get("perfil")
+        ativo = request.data.get("ativo", True)
+
+        if usuario_id and condominio_id:
+            vinculo = UsuarioCondominio.objects.filter(usuario_id=usuario_id, condominio_id=condominio_id).first()
+            if vinculo:
+                if perfil_codigo:
+                    try:
+                        vinculo.perfil = Perfil.objects.get(codigo=perfil_codigo)
+                    except Perfil.DoesNotExist:
+                        return Response({"perfil": ["Perfil informado não existe."]}, status=status.HTTP_400_BAD_REQUEST)
+                vinculo.ativo = ativo
+                vinculo.save()
+                serializer = self.get_serializer(vinculo)
+                return Response(serializer.data, status=status.HTTP_200_OK)
+
+        return super().create(request, *args, **kwargs)

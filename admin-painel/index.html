@@ -546,10 +546,16 @@
               </div>
               <div>
                 <label class="block font-medium text-slate-300 mb-1">Vincular Pessoa Física (Opcional)</label>
-                <select v-model="form.pessoa" class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white">
+                <select
+                  v-model="form.pessoa"
+                  :disabled="isEditing"
+                  :class="isEditing ? 'opacity-60 cursor-not-allowed bg-slate-900' : 'bg-slate-950'"
+                  class="w-full px-3 py-2 rounded-xl border border-slate-700 text-white"
+                >
                   <option :value="null">Nenhuma (Usuário puramente administrativo)</option>
                   <option v-for="p in pessoasList" :key="p.id" :value="p.id">{{ p.nome }} ({{ p.cpf || 'Sem CPF' }})</option>
                 </select>
+                <p v-if="isEditing" class="text-[11px] text-amber-400 mt-1">🔒 A pessoa física vinculada não pode ser alterada na edição deste usuário.</p>
               </div>
               <div class="grid grid-cols-3 gap-2 pt-1">
                 <label class="flex items-center space-x-2 text-slate-300">

@@ -25,7 +25,7 @@
           class="bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm font-semibold text-slate-800 shadow-sm focus:ring-1 focus:ring-blue-500"
         >
           <option v-for="p in periodosDisponiveis" :key="p.id" :value="p.id">
-            {{ p.mes_referencia_rotulo }} {{ authStore.isSindico ? `(${p.status})` : '' }}
+            {{ p.mes_referencia_rotulo }} {{ (authStore.isSindico || authStore.isSubSindico) ? `(${p.status})` : '' }}
           </option>
         </select>
 
@@ -55,27 +55,27 @@
           {{ exportingExcel ? 'Gerando...' : 'Exportar Excel' }}
         </button>
 
-        <!-- Ação Fechar Período (Apenas Síndico) -->
+        <!-- Ação Fechar Período (Síndico e Subsíndico) -->
         <button
-          v-if="authStore.isSindico && currentPeriodo?.status === 'ABERTO'"
+          v-if="(authStore.isSindico || authStore.isSubSindico) && currentPeriodo?.status === 'ABERTO'"
           @click="fecharPeriodo"
           class="inline-flex items-center px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition shadow-sm"
         >
           Fechar Período
         </button>
 
-        <!-- Ação Publicar (Apenas Síndico) -->
+        <!-- Ação Publicar (Síndico e Subsíndico) -->
         <button
-          v-if="authStore.isSindico && currentPeriodo?.status === 'FECHADO'"
+          v-if="(authStore.isSindico || authStore.isSubSindico) && currentPeriodo?.status === 'FECHADO'"
           @click="publicarPeriodo"
           class="inline-flex items-center px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-medium transition shadow-sm"
         >
           Publicar para Moradores
         </button>
 
-        <!-- Ação Reabrir (Apenas Síndico) -->
+        <!-- Ação Reabrir (Síndico e Subsíndico) -->
         <button
-          v-if="authStore.isSindico && currentPeriodo?.status !== 'ABERTO'"
+          v-if="(authStore.isSindico || authStore.isSubSindico) && currentPeriodo?.status !== 'ABERTO'"
           @click="reabrirPeriodo"
           class="inline-flex items-center px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-medium transition border"
         >
@@ -96,7 +96,7 @@
       </div>
       <h3 class="text-base font-bold text-slate-800">Nenhuma prestação de contas pública disponível</h3>
       <p class="text-xs text-slate-500">
-        {{ authStore.isSindico ? 'Não encontramos prestações de contas cadastradas.' : 'As prestações de contas deste condomínio ainda estão em fase de fechamento e serão disponibilizadas assim que forem publicadas pela administração.' }}
+        {{ (authStore.isSindico || authStore.isSubSindico) ? 'Não encontramos prestações de contas cadastradas.' : 'As prestações de contas deste condomínio ainda estão em fase de fechamento e serão disponibilizadas assim que forem publicadas pela administração.' }}
       </p>
     </div>
 
@@ -335,7 +335,7 @@ const despesasFixas = computed(() => despesas.value.filter(d => d.tipo === "FIXA
 const despesasVariaveis = computed(() => despesas.value.filter(d => d.tipo === "VARIAVEL"))
 
 const periodosDisponiveis = computed(() => {
-  if (authStore.isSindico) return periodos.value
+  if (authStore.isSindico || authStore.isSubSindico) return periodos.value
   return periodos.value.filter(p => p.status === "PUBLICADO")
 })
 

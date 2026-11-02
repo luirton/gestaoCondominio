@@ -12,7 +12,7 @@ from decimal import Decimal
 
 from core.models import CargoCondominial
 from core.views import get_request_condominios
-from core.permissions import IsSindico, IsSindicoOrSubSindico, get_user_profiles
+from core.permissions import IsSindico, IsSindicoOrSubSindico, ContaBancariaPermission, get_user_profiles
 from .models import (
     ContaBancaria,
     PeriodoPrestacao,
@@ -44,6 +44,7 @@ from .services import (
 
 class ContaBancariaViewSet(viewsets.ModelViewSet):
     serializer_class = ContaBancariaSerializer
+    permission_classes = [ContaBancariaPermission]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_fields = ["condominio", "tipo_conta", "ativo"]
     search_fields = ["banco_nome", "descricao", "conta"]
@@ -72,14 +73,14 @@ class PeriodoPrestacaoViewSet(viewsets.ModelViewSet):
         if conds is not None:
             qs = qs.filter(condominio_id__in=conds)
 
-        # Para outros perfis (Condômino, SubSíndico, Conselheiro), permitir SOMENTE exibir as prestações PUBLICADAS
+        # Gestores (Síndico e Subsíndico) têm acesso a todos os períodos (inclusive abertos e em fechamento)
         active_role = self.request.headers.get("X-Active-Role") or self.request.query_params.get("active_role")
         if active_role:
-            if active_role != "SINDICO":
+            if active_role not in ["SINDICO", "SUBSINDICO"]:
                 qs = qs.filter(status=PeriodoPrestacao.StatusPeriodo.PUBLICADO)
         else:
             user_profiles = get_user_profiles(self.request.user, request=self.request)
-            if not self.request.user.is_superuser and "SINDICO" not in user_profiles:
+            if not self.request.user.is_superuser and "SINDICO" not in user_profiles and "SUBSINDICO" not in user_profiles:
                 qs = qs.filter(status=PeriodoPrestacao.StatusPeriodo.PUBLICADO)
 
         return qs
@@ -148,8 +149,8 @@ class PeriodoPrestacaoViewSet(viewsets.ModelViewSet):
     def fechar(self, request, pk=None):
         periodo = self.get_object()
         user_profiles = get_user_profiles(request.user)
-        if not request.user.is_superuser and "SINDICO" not in user_profiles:
-            raise PermissionDenied("Apenas o Síndico ou Super Administrador pode fechar a prestação de contas.")
+        if not request.user.is_superuser and "SINDICO" not in user_profiles and "SUBSINDICO" not in user_profiles:
+            raise PermissionDenied("Apenas o Síndico ou Subsíndico pode fechar a prestação de contas.")
         try:
             totais = fechar_periodo_prestacao(periodo, request.user)
             return Response({"message": "Período fechado com sucesso e snapshot congelado.", "totais": totais})
@@ -160,8 +161,8 @@ class PeriodoPrestacaoViewSet(viewsets.ModelViewSet):
     def publicar(self, request, pk=None):
         periodo = self.get_object()
         user_profiles = get_user_profiles(request.user)
-        if not request.user.is_superuser and "SINDICO" not in user_profiles:
-            raise PermissionDenied("Apenas o Síndico pode publicar a prestação de contas.")
+        if not request.user.is_superuser and "SINDICO" not in user_profiles and "SUBSINDICO" not in user_profiles:
+            raise PermissionDenied("Apenas o Síndico ou Subsíndico pode publicar a prestação de contas.")
         
         if periodo.status == PeriodoPrestacao.StatusPeriodo.ABERTO:
             fechar_periodo_prestacao(periodo, request.user)
@@ -185,8 +186,8 @@ class PeriodoPrestacaoViewSet(viewsets.ModelViewSet):
         periodo = self.get_object()
         if not request.user.is_superuser:
             user_profiles = get_user_profiles(request.user)
-            if "SINDICO" not in user_profiles:
-                raise PermissionDenied("Apenas o Síndico pode reabrir um período já fechado.")
+            if "SINDICO" not in user_profiles and "SUBSINDICO" not in user_profiles:
+                raise PermissionDenied("Apenas o Síndico ou Subsíndico pode reabrir um período já fechado.")
         
         periodo.status = PeriodoPrestacao.StatusPeriodo.ABERTO
         periodo.save()

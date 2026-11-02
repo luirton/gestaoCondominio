@@ -126,8 +126,9 @@ class CondominioModulePermission(permissions.BasePermission):
 class UserManagementPermission(permissions.BasePermission):
     """
     Gerenciamento de Usuários e Perfis:
-    - Criação/Edição: Síndico e Subsíndico.
-    - Exclusão: Apenas Síndico.
+    - Leitura (GET): Síndico e Subsíndico.
+    - Criação, Edição e Exclusão de contas de usuário: Apenas Síndico (ou superusuário).
+      Subsíndicos não têm permissão para editar/criar contas de usuário.
     - O próprio usuário pode ler seus dados (/api/auth/me/).
     """
     def has_permission(self, request, view):
@@ -141,7 +142,26 @@ class UserManagementPermission(permissions.BasePermission):
         if request.method in permissions.SAFE_METHODS:
             return ("SINDICO" in profiles) or ("SUBSINDICO" in profiles)
         
-        if request.method == "DELETE":
-            return "SINDICO" in profiles
+        # Subsíndico não pode criar, editar ou excluir contas de usuários
+        return "SINDICO" in profiles
 
-        return ("SINDICO" in profiles) or ("SUBSINDICO" in profiles)
+
+class ContaBancariaPermission(permissions.BasePermission):
+    """
+    Contas Bancárias do Condomínio:
+    - Leitura (GET): Síndico, Subsíndico, Conselheiro e demais gestores.
+    - Criação, Edição e Exclusão (POST, PUT, PATCH, DELETE): Apenas Síndico (ou superusuário).
+      Subsíndicos não têm permissão para editar contas bancárias.
+    """
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+        if request.user.is_superuser:
+            return True
+
+        profiles = get_user_profiles(request.user)
+
+        if request.method in permissions.SAFE_METHODS:
+            return any(p in profiles for p in ["SINDICO", "SUBSINDICO", "CONSELHEIRO"])
+
+        return "SINDICO" in profiles

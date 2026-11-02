@@ -8,7 +8,7 @@
       </div>
 
       <button
-        v-if="authStore.canEdit"
+        v-if="authStore.isSindico"
         @click="openModal()"
         class="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold rounded-xl shadow transition"
       >
@@ -17,8 +17,9 @@
     </div>
 
     <!-- Subsíndico Protection Notice -->
-    <div v-if="authStore.isSubSindico" class="p-3 bg-amber-50 rounded-xl border border-amber-200 text-amber-900 text-xs">
-      ℹ️ Como <strong>Subsíndico</strong>, você tem permissão para cadastrar e editar usuários, mas a exclusão permanente de contas é reservada exclusivamente ao <strong>Síndico</strong>.
+    <div v-if="authStore.isSubSindico" class="p-3 bg-amber-50 rounded-xl border border-amber-200 text-amber-900 text-xs flex items-center gap-2">
+      <span class="text-base">ℹ️</span>
+      <span>Como <strong>Subsíndico</strong>, você possui acesso de visualização aos usuários e perfis do condomínio. A criação, edição e exclusão de contas de usuário é reservada exclusivamente ao <strong>Síndico</strong>.</span>
     </div>
 
     <!-- Alert -->
@@ -94,12 +95,15 @@
               </td>
               <td class="p-4 text-right space-x-2">
                 <button
-                  v-if="authStore.canEdit"
+                  v-if="authStore.isSindico"
                   @click="openModal(item)"
                   class="px-2.5 py-1 text-slate-700 hover:bg-slate-100 border border-slate-300 rounded-lg transition"
                 >
                   Editar
                 </button>
+                <span v-else-if="authStore.isSubSindico" class="text-[11px] text-slate-400 italic">
+                  Visualização
+                </span>
                 <button
                   v-if="authStore.canDelete && !item.is_superuser"
                   @click="deleteUsuario(item)"
@@ -156,17 +160,28 @@
             <div class="flex items-center justify-between mb-1">
               <label class="font-medium text-slate-700">Pessoa Vinculada (Opcional)</label>
               <input
+                v-if="!isEditing"
                 v-model="filtroBuscaPessoa"
                 type="text"
                 placeholder="Filtrar por nome ou CPF..."
                 class="px-2 py-0.5 text-[11px] border rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 w-48"
               />
             </div>
-            <select v-model="form.pessoa" class="w-full px-3 py-2 border rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none">
+            <select
+              v-model="form.pessoa"
+              :disabled="isEditing"
+              :class="isEditing ? 'bg-slate-100 text-slate-500 cursor-not-allowed border-slate-300' : 'bg-white border-slate-300'"
+              class="w-full px-3 py-2 border rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none"
+            >
               <option :value="null">Nenhuma (Usuário exclusivo do sistema)</option>
-              <option v-for="p in pessoasFiltradas" :key="p.id" :value="p.id">{{ p.nome }} (CPF: {{ p.cpf || 'Não inf.' }})</option>
+              <option v-for="p in pessoasExibicao" :key="p.id" :value="p.id">
+                {{ p.nome }} (CPF: {{ p.cpf || 'Não inf.' }})
+              </option>
             </select>
-            <p class="text-[10px] text-slate-400 mt-1">
+            <p v-if="isEditing" class="text-[11px] text-amber-700 font-medium mt-1 flex items-center gap-1">
+              <span>🔒</span> A pessoa vinculada está bloqueada e não pode ser alterada na edição de usuário.
+            </p>
+            <p v-else class="text-[10px] text-slate-400 mt-1">
               Exibindo {{ pessoasFiltradas.length }} de {{ pessoas.length }} pessoas. Conecta a credencial de login aos dados civis e moradia.
             </p>
           </div>
@@ -233,6 +248,8 @@ const alertMessage = ref("")
 const alertClass = ref("")
 const modalErrorMessage = ref("")
 
+const pessoaVinculadaNome = ref("")
+
 const pessoasFiltradas = computed(() => {
   if (!filtroBuscaPessoa.value.trim()) return pessoas.value
   const termoTexto = filtroBuscaPessoa.value.toLowerCase().trim()
@@ -243,6 +260,18 @@ const pessoasFiltradas = computed(() => {
     const cpfMatch = apenasNumeros ? cpfPuro.includes(apenasNumeros) : false
     return nomeMatch || cpfMatch
   })
+})
+
+const pessoasExibicao = computed(() => {
+  const lista = [...pessoasFiltradas.value]
+  if (isEditing.value && form.value.pessoa && !lista.some(p => p.id === form.value.pessoa)) {
+    lista.unshift({
+      id: form.value.pessoa,
+      nome: pessoaVinculadaNome.value || "Pessoa Vinculada Atual",
+      cpf: "",
+    })
+  }
+  return lista
 })
 
 const showModal = ref(false)
@@ -304,20 +333,32 @@ const openModal = (item = null) => {
   if (item) {
     isEditing.value = true
     selectedId.value = item.id
+    pessoaVinculadaNome.value = item.pessoa_nome || ""
     form.value = {
       username: item.username,
-      email: item.email,
+      email: item.email || "",
       password: "",
       pessoa: item.pessoa,
       is_active: item.is_active,
     }
-    if (item.vinculos_condominios?.length > 0) {
-      perfilForm.value.condominio = item.vinculos_condominios[0].condominio
-      perfilForm.value.perfil = item.vinculos_condominios[0].perfil
+    const activeCondoId = authStore.activeCondominioId ? Number(authStore.activeCondominioId) : null
+    const vinculoAtual = (activeCondoId && item.vinculos_condominios?.find(v => Number(v.condominio) === activeCondoId))
+      || item.vinculos_condominios?.[0]
+
+    if (vinculoAtual) {
+      perfilForm.value.condominio = vinculoAtual.condominio
+      perfilForm.value.perfil = vinculoAtual.perfil
+    } else {
+      const defaultCondoId = activeCondoId || (condominios.value[0]?.id || "")
+      perfilForm.value = {
+        condominio: defaultCondoId,
+        perfil: "CONDOMINO",
+      }
     }
   } else {
     isEditing.value = false
     selectedId.value = null
+    pessoaVinculadaNome.value = ""
     form.value = {
       username: "",
       email: "",
@@ -342,32 +383,34 @@ const saveUsuario = async () => {
   modalErrorMessage.value = ""
   try {
     let userId = selectedId.value
+    const payload = {
+      ...form.value,
+      condominio_id: perfilForm.value.condominio,
+      perfil: perfilForm.value.perfil,
+    }
+
     if (isEditing.value) {
-      const payload = { ...form.value }
       if (!payload.password) delete payload.password
+      delete payload.pessoa // Bloqueia pessoa vinculada na edição
       await apiClient.put(`/usuarios/${userId}/`, payload)
-      showAlert("Usuário atualizado com sucesso!")
+      showAlert("Usuário e perfil atualizados com sucesso!")
     } else {
-      const res = await apiClient.post("/usuarios/", form.value)
+      const res = await apiClient.post("/usuarios/", payload)
       userId = res.data.id
       showAlert("Usuário cadastrado com sucesso!")
     }
 
     if (userId && perfilForm.value.condominio && perfilForm.value.perfil) {
-      try {
-        await apiClient.post("/usuarios-condominios/", {
-          usuario: userId,
-          condominio: perfilForm.value.condominio,
-          perfil: perfilForm.value.perfil,
-          ativo: true,
-        })
-      } catch (vinculoErr) {
-        console.log("Perfil já associado ou atualizado:", vinculoErr)
-      }
+      await apiClient.post("/usuarios-condominios/", {
+        usuario: userId,
+        condominio: perfilForm.value.condominio,
+        perfil: perfilForm.value.perfil,
+        ativo: true,
+      })
     }
 
     showModal.value = false
-    fetchUsuarios()
+    await fetchUsuarios()
   } catch (err) {
     const errorDetails = err.response?.data
     let msg = "Erro ao salvar usuário."

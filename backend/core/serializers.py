@@ -481,6 +481,8 @@ class UsuarioSerializer(serializers.ModelSerializer):
     pessoa_nome = serializers.CharField(source="pessoa.nome", read_only=True)
     password = serializers.CharField(write_only=True, required=False)
     vinculos_condominios = UsuarioCondominioSerializer(source="condominios", many=True, read_only=True)
+    condominio_id = serializers.IntegerField(write_only=True, required=False, allow_null=True)
+    perfil = serializers.CharField(write_only=True, required=False, allow_null=True)
 
     class Meta:
         model = Usuario
@@ -497,6 +499,8 @@ class UsuarioSerializer(serializers.ModelSerializer):
             "is_superuser",
             "password",
             "vinculos_condominios",
+            "condominio_id",
+            "perfil",
             "created_at",
             "updated_at",
         ]
@@ -504,19 +508,50 @@ class UsuarioSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         password = validated_data.pop("password", None)
+        condominio_id = validated_data.pop("condominio_id", None)
+        perfil_codigo = validated_data.pop("perfil", None)
         user = Usuario(**validated_data)
         if password:
             user.set_password(password)
         else:
             user.set_unusable_password()
         user.save()
+
+        if condominio_id and perfil_codigo:
+            try:
+                perfil_obj = Perfil.objects.get(codigo=perfil_codigo)
+                UsuarioCondominio.objects.update_or_create(
+                    usuario=user,
+                    condominio_id=condominio_id,
+                    defaults={"perfil": perfil_obj, "ativo": True},
+                )
+            except (Perfil.DoesNotExist, Exception):
+                pass
+
         return user
 
     def update(self, instance, validated_data):
         password = validated_data.pop("password", None)
+        condominio_id = validated_data.pop("condominio_id", None)
+        perfil_codigo = validated_data.pop("perfil", None)
+        # Bloqueia alteração da pessoa física vinculada na edição de usuário existente
+        validated_data.pop("pessoa", None)
+
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         if password:
             instance.set_password(password)
         instance.save()
+
+        if condominio_id and perfil_codigo:
+            try:
+                perfil_obj = Perfil.objects.get(codigo=perfil_codigo)
+                UsuarioCondominio.objects.update_or_create(
+                    usuario=instance,
+                    condominio_id=condominio_id,
+                    defaults={"perfil": perfil_obj, "ativo": True},
+                )
+            except (Perfil.DoesNotExist, Exception):
+                pass
+
         return instance

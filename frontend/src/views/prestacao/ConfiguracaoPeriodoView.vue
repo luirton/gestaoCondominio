@@ -348,12 +348,20 @@
                   {{ loadingSaldosAnt ? 'Carregando...' : 'Carregar da Prestação Anterior' }}
                 </button>
                 <button
+                  v-if="authStore.isSindico"
                   type="button"
                   @click="abrirModalNovaConta"
                   class="px-2.5 py-1.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded-lg text-xs font-semibold border border-emerald-200 transition flex items-center gap-1 shadow-sm"
                 >
                   + Cadastrar Tipo de Conta
                 </button>
+                <span
+                  v-else-if="authStore.isSubSindico"
+                  class="px-2.5 py-1.5 bg-slate-50 text-slate-500 rounded-lg text-[11px] font-medium border border-slate-200 flex items-center gap-1"
+                  title="Apenas o Síndico pode cadastrar novas contas bancárias"
+                >
+                  🔒 Contas Bancárias (Edição Síndico)
+                </span>
               </div>
             </div>
 
@@ -598,6 +606,9 @@
 import { ref, computed, onMounted } from "vue"
 import financeiroApi from "@/api/financeiro"
 import apiClient from "@/api/client"
+import { useAuthStore } from "@/stores/auth"
+
+const authStore = useAuthStore()
 
 const loading = ref(true)
 const periodos = ref([])
