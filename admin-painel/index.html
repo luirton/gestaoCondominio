@@ -340,6 +340,53 @@
                   <input v-model="form.data_nascimento" type="date" class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white" />
                 </div>
               </div>
+
+              <!-- SELEÇÃO DE CONDOMÍNIO E UNIDADE DA PESSOA -->
+              <div class="p-4 bg-slate-950/80 rounded-2xl border border-slate-800 space-y-3 mt-2">
+                <div class="flex items-center justify-between">
+                  <span class="text-xs font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <span>🏢</span> Condomínio & Unidade da Pessoa
+                  </span>
+                  <span class="text-[11px] text-slate-400">Atribuir / Alterar Residência</span>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label class="block font-medium text-slate-300 mb-1">Selecionar Condomínio</label>
+                    <select v-model="form.condominio_id" @change="onPessoaCondominioChange" class="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-white focus:outline-none focus:border-emerald-500">
+                      <option :value="null">-- Nenhum / Deixar sem vínculo --</option>
+                      <option v-for="c in condominiosList" :key="c.id" :value="c.id">{{ c.nome }}</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label class="block font-medium text-slate-300 mb-1">Unidade Habitacional</label>
+                    <select v-model="form.unidade_id" :disabled="!form.condominio_id" class="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-white focus:outline-none focus:border-emerald-500 disabled:opacity-40">
+                      <option :value="null">-- Selecione a Unidade --</option>
+                      <option v-for="u in unidadesFiltradasPessoa" :key="u.id" :value="u.id">
+                        {{ u.identificador }} {{ u.bloco_torre ? `(Bloco ${u.bloco_torre})` : '' }}
+                      </option>
+                    </select>
+                  </div>
+                </div>
+
+                <div v-if="form.unidade_id" class="grid grid-cols-2 gap-3 pt-2 border-t border-slate-800">
+                  <div>
+                    <label class="block font-medium text-slate-300 mb-1">Tipo de Vínculo</label>
+                    <select v-model="form.tipo_vinculo" class="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-white">
+                      <option value="MORADOR">Morador / Dependente</option>
+                      <option value="PROPRIETARIO">Proprietário</option>
+                      <option value="INQUILINO">Inquilino</option>
+                      <option value="OUTRO">Outro</option>
+                    </select>
+                  </div>
+
+                  <div class="flex items-center space-x-2 pt-6">
+                    <input id="pessoaResp" v-model="form.responsavel" type="checkbox" class="rounded border-slate-700 text-emerald-600 focus:ring-emerald-500" />
+                    <label for="pessoaResp" class="text-amber-300 font-bold">Responsável Financeiro/Legal</label>
+                  </div>
+                </div>
+              </div>
             </template>
 
             <!-- 4. VÍNCULOS UNIDADE -->
@@ -347,14 +394,23 @@
               <div>
                 <label class="block font-medium text-slate-300 mb-1">Pessoa *</label>
                 <select v-model="form.pessoa" required class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white">
-                  <option v-for="p in pessoasList" :key="p.id" :value="p.id">{{ p.nome }} (CPF: {{ p.cpf || 'Sem' }})</option>
+                  <option v-for="p in pessoasList" :key="p.id" :value="p.id">{{ p.nome }} (CPF: {{ p.cpf || 'Sem CPF' }})</option>
                 </select>
               </div>
-              <div>
-                <label class="block font-medium text-slate-300 mb-1">Unidade *</label>
-                <select v-model="form.unidade" required class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white">
-                  <option v-for="u in unidadesList" :key="u.id" :value="u.id">{{ u.identificador }} ({{ u.condominio_nome }})</option>
-                </select>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label class="block font-medium text-slate-300 mb-1">Filtrar por Condomínio</label>
+                  <select v-model="form.condominio_id" @change="onVinculoCondominioChange" class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white">
+                    <option :value="null">-- Todos os Condomínios --</option>
+                    <option v-for="c in condominiosList" :key="c.id" :value="c.id">{{ c.nome }}</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block font-medium text-slate-300 mb-1">Unidade Habitacional *</label>
+                  <select v-model="form.unidade" required class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white">
+                    <option v-for="u in unidadesFiltradasVinculo" :key="u.id" :value="u.id">{{ u.identificador }} ({{ u.condominio_nome }})</option>
+                  </select>
+                </div>
               </div>
               <div>
                 <label class="block font-medium text-slate-300 mb-1">Tipo de Vínculo *</label>
@@ -464,6 +520,10 @@
                 <input id="mandAtivo" v-model="form.ativo" type="checkbox" class="rounded border-slate-700 text-emerald-600 focus:ring-emerald-500" />
                 <label for="mandAtivo" class="text-slate-300 font-medium">Mandato Ativo</label>
               </div>
+              <div class="flex items-center space-x-2 pt-1">
+                <input id="isentoCond" v-model="form.isento_condominio" type="checkbox" class="rounded border-slate-700 text-amber-500 focus:ring-amber-500" />
+                <label for="isentoCond" class="text-amber-400 font-medium">Isento de Condomínio (Cota Zerada)</label>
+              </div>
             </template>
 
             <!-- 7. USUÁRIOS E SEGURANÇA -->
@@ -486,10 +546,16 @@
               </div>
               <div>
                 <label class="block font-medium text-slate-300 mb-1">Vincular Pessoa Física (Opcional)</label>
-                <select v-model="form.pessoa" class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white">
+                <select
+                  v-model="form.pessoa"
+                  :disabled="isEditing"
+                  :class="isEditing ? 'opacity-60 cursor-not-allowed bg-slate-900' : 'bg-slate-950'"
+                  class="w-full px-3 py-2 rounded-xl border border-slate-700 text-white"
+                >
                   <option :value="null">Nenhuma (Usuário puramente administrativo)</option>
                   <option v-for="p in pessoasList" :key="p.id" :value="p.id">{{ p.nome }} ({{ p.cpf || 'Sem CPF' }})</option>
                 </select>
+                <p v-if="isEditing" class="text-[11px] text-amber-400 mt-1">🔒 A pessoa física vinculada não pode ser alterada na edição deste usuário.</p>
               </div>
               <div class="grid grid-cols-3 gap-2 pt-1">
                 <label class="flex items-center space-x-2 text-slate-300">
@@ -618,6 +684,8 @@
             { key: "id", label: "ID" },
             { key: "nome", label: "Nome Completo", fontBold: true },
             { key: "cpf", label: "CPF" },
+            { key: "condominio_nome", label: "Condomínio" },
+            { key: "unidade_identificador", label: "Unidade" },
             { key: "telefone", label: "Telefone" },
             { key: "email", label: "E-mail" }
           ],
@@ -644,6 +712,7 @@
             { key: "cargo_display", label: "Mandato" },
             { key: "condominio_nome", label: "Condomínio" },
             { key: "data_inicio", label: "Início" },
+            { key: "isento_condominio", label: "Isenção Cota" },
             { key: "ativo", label: "Status" }
           ],
           usuarios: [
@@ -664,6 +733,26 @@
         }
 
         const currentColumns = computed(() => columnsConfig[activeTab.value] || [])
+
+        // Unidades filtradas dinamicamente para seleção de Condomínio
+        const unidadesFiltradasPessoa = computed(() => {
+          if (!form.value.condominio_id) return []
+          return unidadesList.value.filter(u => u.condominio == form.value.condominio_id || u.condominio_id == form.value.condominio_id)
+        })
+
+        const unidadesFiltradasVinculo = computed(() => {
+          if (!form.value.condominio_id) return unidadesList.value
+          return unidadesList.value.filter(u => u.condominio == form.value.condominio_id || u.condominio_id == form.value.condominio_id)
+        })
+
+        const onPessoaCondominioChange = () => {
+          form.value.unidade_id = null
+        }
+
+        const onVinculoCondominioChange = () => {
+          const primeira = unidadesFiltradasVinculo.value[0]
+          form.value.unidade = primeira ? primeira.id : ""
+        }
 
         // Modal
         const showModal = ref(false)
@@ -724,11 +813,12 @@
         const loadAllAux = async () => {
           if (!token.value) return
           try {
+            const auxCfg = { ...getAxiosConfig(), params: { page_size: 1000 } }
             const [rc, rp, ru, rusr] = await Promise.all([
-              axios.get(`${API_URL}/condominios/`, getAxiosConfig()),
-              axios.get(`${API_URL}/pessoas/`, getAxiosConfig()),
-              axios.get(`${API_URL}/unidades/`, getAxiosConfig()),
-              axios.get(`${API_URL}/usuarios/`, getAxiosConfig()),
+              axios.get(`${API_URL}/condominios/`, auxCfg),
+              axios.get(`${API_URL}/pessoas/`, auxCfg),
+              axios.get(`${API_URL}/unidades/`, auxCfg),
+              axios.get(`${API_URL}/usuarios/`, auxCfg),
             ])
             condominiosList.value = rc.data.results || rc.data
             pessoasList.value = rp.data.results || rp.data
@@ -744,7 +834,7 @@
           loading.value = true
           globalMsg.value = ""
           try {
-            const params = {}
+            const params = { page_size: 1000 }
             if (searchQuery.value) params.search = searchQuery.value
             const res = await axios.get(`${API_URL}/${activeTab.value}/`, {
               ...getAxiosConfig(),
@@ -769,27 +859,35 @@
             form.value = JSON.parse(JSON.stringify(item))
             if (activeTab.value === 'usuarios') {
               form.value.password = ""
+            } else if (activeTab.value === 'pessoas') {
+              form.value.condominio_id = item.condominio_id || (filterCondominioId.value ? Number(filterCondominioId.value) : null)
+              form.value.unidade_id = item.unidades_vinculadas?.[0]?.unidade_id || null
+              form.value.tipo_vinculo = item.unidades_vinculadas?.[0]?.tipo || 'MORADOR'
+              form.value.responsavel = item.unidades_vinculadas?.[0]?.responsavel || false
+            } else if (activeTab.value === 'vinculos-unidade') {
+              form.value.condominio_id = item.condominio_id || null
             }
           } else {
             isEditing.value = false
             selectedId.value = null
+            const defaultCondId = filterCondominioId.value ? Number(filterCondominioId.value) : (condominiosList.value[0]?.id || "")
             // Defaults por tab
             if (activeTab.value === 'condominios') {
               form.value = { nome: "", cnpj: "", endereco: "", numero: "", complemento: "", cidade: "São Paulo", uf: "SP", cep: "", ativo: true }
             } else if (activeTab.value === 'unidades') {
-              form.value = { condominio: condominiosList.value[0]?.id || "", identificador: "", bloco_torre: "", fracao_ideal: null, area_privativa: null, observacoes: "" }
+              form.value = { condominio: defaultCondId, identificador: "", bloco_torre: "", fracao_ideal: null, area_privativa: null, observacoes: "" }
             } else if (activeTab.value === 'pessoas') {
-              form.value = { nome: "", cpf: "", telefone: "", email: "", data_nascimento: null }
+              form.value = { nome: "", cpf: "", telefone: "", email: "", data_nascimento: null, condominio_id: defaultCondId || null, unidade_id: null, tipo_vinculo: "MORADOR", responsavel: false }
             } else if (activeTab.value === 'vinculos-unidade') {
-              form.value = { pessoa: pessoasList.value[0]?.id || "", unidade: unidadesList.value[0]?.id || "", tipo: "MORADOR", data_inicio: new Date().toISOString().split("T")[0], data_fim: null, responsavel: false }
+              form.value = { pessoa: pessoasList.value[0]?.id || "", condominio_id: defaultCondId || null, unidade: unidadesList.value[0]?.id || "", tipo: "MORADOR", data_inicio: new Date().toISOString().split("T")[0], data_fim: null, responsavel: false }
             } else if (activeTab.value === 'funcionarios') {
-              form.value = { pessoa: pessoasList.value[0]?.id || "", condominio: condominiosList.value[0]?.id || "", cargo: "PORTEIRO", endereco_proprio: "", data_admissao: new Date().toISOString().split("T")[0], data_demissao: null, ativo: true }
+              form.value = { pessoa: pessoasList.value[0]?.id || "", condominio: defaultCondId, cargo: "PORTEIRO", endereco_proprio: "", data_admissao: new Date().toISOString().split("T")[0], data_demissao: null, ativo: true }
             } else if (activeTab.value === 'cargos-condominiais') {
-              form.value = { pessoa: pessoasList.value[0]?.id || "", condominio: condominiosList.value[0]?.id || "", cargo: "SINDICO", data_inicio: new Date().toISOString().split("T")[0], data_fim: null, ativo: true }
+              form.value = { pessoa: pessoasList.value[0]?.id || "", condominio: defaultCondId, cargo: "SINDICO", data_inicio: new Date().toISOString().split("T")[0], data_fim: null, ativo: true, isento_condominio: false }
             } else if (activeTab.value === 'usuarios') {
               form.value = { username: "", email: "", password: "", pessoa: null, is_active: true, is_staff: true, is_superuser: false }
             } else if (activeTab.value === 'usuarios-condominios') {
-              form.value = { usuario: usuariosList.value[0]?.id || "", condominio: condominiosList.value[0]?.id || "", perfil: "SINDICO", ativo: true }
+              form.value = { usuario: usuariosList.value[0]?.id || "", condominio: defaultCondId, perfil: "SINDICO", ativo: true }
             }
           }
           showModal.value = true
@@ -803,9 +901,17 @@
             if (activeTab.value === 'usuarios' && isEditing.value && !payload.password) {
               delete payload.password
             }
+            if (activeTab.value === 'pessoas') {
+              if (!payload.unidade_id) {
+                delete payload.unidade_id
+                delete payload.tipo_vinculo
+                delete payload.responsavel
+              }
+            }
+            delete payload.condominio_id
 
             if (isEditing.value) {
-              await axios.put(`${API_URL}/${activeTab.value}/${selectedId.value}/`, payload, getAxiosConfig())
+              await axios.patch(`${API_URL}/${activeTab.value}/${selectedId.value}/`, payload, getAxiosConfig())
               globalMsg.value = "Registro atualizado com sucesso no banco de dados!"
             } else {
               await axios.post(`${API_URL}/${activeTab.value}/`, payload, getAxiosConfig())
@@ -853,6 +959,7 @@
           token, user, loading, saving, globalMsg, globalMsgType, modalError, searchQuery, filterCondominioId,
           loginForm, loginError, activeTab, items, counts, tabs, currentTabName, currentColumns,
           condominiosList, pessoasList, unidadesList, usuariosList,
+          unidadesFiltradasPessoa, unidadesFiltradasVinculo, onPessoaCondominioChange, onVinculoCondominioChange,
           showModal, isEditing, form,
           handleLogin, fillAdmin, logout, onFilterChange, loadData, openModal, saveForm, deleteItem
         }

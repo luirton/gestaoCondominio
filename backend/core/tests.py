@@ -203,3 +203,86 @@ class CondominioAPITestCase(TestCase):
             "password": "senha123password"
         })
         self.assertEqual(resp_dup.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_bloqueio_alteracao_pessoa_vinculada_e_alteracao_perfil(self):
+        # Cria Pessoa A e Pessoa B
+        p_a = Pessoa.objects.create(nome="Pessoa Original", cpf="111.222.333-44")
+        p_b = Pessoa.objects.create(nome="Pessoa Tentativa Alteracao", cpf="555.666.777-88")
+
+        # Cria perfil SUBSINDICO
+        perfil_sub, _ = Perfil.objects.get_or_create(
+            codigo=Perfil.CodigoPerfil.SUBSINDICO,
+            defaults={"nome": "Subsíndico", "descricao": "Sub"}
+        )
+
+        # Cria Usuário vinculado à Pessoa A
+        user = Usuario.objects.create_user(
+            username="user_edicao_teste",
+            email="user_edicao@teste.com",
+            password="password123",
+            pessoa=p_a
+        )
+        UsuarioCondominio.objects.create(
+            usuario=user,
+            condominio=self.condominio,
+            perfil=self.perfil_condomino,
+            ativo=True
+        )
+
+        self.client.force_authenticate(user=self.user_sindico)
+
+        # Edição tentando trocar a pessoa para p_b e o perfil para SUBSINDICO
+        resp = self.client.put(f"/api/usuarios/{user.id}/", {
+            "username": "user_edicao_teste",
+            "email": "user_edicao@teste.com",
+            "pessoa": p_b.id,
+            "condominio_id": self.condominio.id,
+            "perfil": "SUBSINDICO",
+            "is_active": True
+        })
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+
+        user.refresh_from_db()
+        # 1. A pessoa vinculada DEVE continuar sendo p_a (bloqueada na edição)
+        self.assertEqual(user.pessoa, p_a)
+
+        # 2. O perfil DEVE ter sido atualizado para SUBSINDICO
+        vinculo = UsuarioCondominio.objects.get(usuario=user, condominio=self.condominio)
+        self.assertEqual(vinculo.perfil.codigo, "SUBSINDICO")
+
+    def test_sub_sindico_nao_pode_editar_contas(self):
+        # Cria usuário com perfil de Subsíndico (não superuser)
+        perfil_sub, _ = Perfil.objects.get_or_create(
+            codigo=Perfil.CodigoPerfil.SUBSINDICO,
+            defaults={"nome": "Subsíndico", "descricao": "Sub"}
+        )
+        user_sub = Usuario.objects.create_user(
+            username="sub_sindico_operacional",
+            email="sub@teste.com",
+            password="password123"
+        )
+        UsuarioCondominio.objects.create(
+            usuario=user_sub,
+            condominio=self.condominio,
+            perfil=perfil_sub,
+            ativo=True
+        )
+
+        self.client.force_authenticate(user=user_sub)
+
+        # 1. Subsíndico não pode criar nem editar contas de usuário (403)
+        resp_user = self.client.post("/api/usuarios/", {
+            "username": "novo_user_por_sub",
+            "email": "novo@teste.com",
+            "password": "senha123password"
+        })
+        self.assertEqual(resp_user.status_code, status.HTTP_403_FORBIDDEN)
+
+        # 2. Subsíndico não pode criar nem editar contas bancárias (403)
+        resp_conta = self.client.post("/api/financeiro/contas-bancarias/", {
+            "condominio": self.condominio.id,
+            "banco_nome": "Banco Teste",
+            "tipo_conta": "CORRENTE",
+            "conta": "12345"
+        })
+        self.assertEqual(resp_conta.status_code, status.HTTP_403_FORBIDDEN)

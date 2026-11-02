@@ -16,22 +16,36 @@ export const useAuthStore = defineStore("auth", {
   getters: {
     isAuthenticated: (state) => !!state.accessToken,
     currentRole: (state) => state.activeProfile || state.user?.perfil_principal || "CONDOMINO",
-    isSindico: (state) => state.user?.is_superuser || state.currentRole === "SINDICO",
-    isSubSindico: (state) => state.currentRole === "SUBSINDICO",
-    isConselheiro: (state) => state.currentRole === "CONSELHEIRO",
-    isCondomino: (state) => state.currentRole === "CONDOMINO",
-    isFuncionario: (state) => state.currentRole === "FUNCIONARIO",
+    isSindico: (state) => {
+      if (state.activeProfile) {
+        return state.activeProfile === "SINDICO"
+      }
+      return state.user?.is_superuser || state.user?.perfil_principal === "SINDICO"
+    },
+    isSubSindico: (state) => (state.activeProfile ? state.activeProfile === "SUBSINDICO" : state.currentRole === "SUBSINDICO"),
+    isConselheiro: (state) => (state.activeProfile ? state.activeProfile === "CONSELHEIRO" : state.currentRole === "CONSELHEIRO"),
+    isCondomino: (state) => (state.activeProfile ? state.activeProfile === "CONDOMINO" : state.currentRole === "CONDOMINO"),
+    isFuncionario: (state) => (state.activeProfile ? state.activeProfile === "FUNCIONARIO" : state.currentRole === "FUNCIONARIO"),
 
     // Permissões granulares
     canEdit: (state) => {
+      if (state.activeProfile) {
+        return ["SINDICO", "SUBSINDICO"].includes(state.activeProfile)
+      }
       if (state.user?.is_superuser) return true
       return ["SINDICO", "SUBSINDICO"].includes(state.currentRole)
     },
     canDelete: (state) => {
+      if (state.activeProfile) {
+        return state.activeProfile === "SINDICO"
+      }
       if (state.user?.is_superuser) return true
       return state.currentRole === "SINDICO"
     },
     isStaffManagement: (state) => {
+      if (state.activeProfile) {
+        return ["SINDICO", "SUBSINDICO"].includes(state.activeProfile)
+      }
       if (state.user?.is_superuser) return true
       return ["SINDICO", "SUBSINDICO"].includes(state.currentRole)
     },

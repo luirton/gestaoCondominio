@@ -314,6 +314,11 @@ class CargoCondominial(TimeStampedModel):
     data_inicio = models.DateField(verbose_name="Início do Mandato")
     data_fim = models.DateField(null=True, blank=True, verbose_name="Fim do Mandato")
     ativo = models.BooleanField(default=True, verbose_name="Mandato Ativo")
+    isento_condominio = models.BooleanField(
+        default=False,
+        verbose_name="Isento de Condomínio",
+        help_text="Se marcado, o titular deste cargo tem isenção da taxa de cota condominial da sua unidade.",
+    )
 
     class Meta:
         verbose_name = "Cargo Condominial / Mandato"

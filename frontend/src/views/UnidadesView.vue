@@ -213,7 +213,7 @@ const fetchCondominios = async () => {
 const fetchUnidades = async () => {
   loading.value = true
   try {
-    const params = { search: searchQuery.value }
+    const params = { search: searchQuery.value, page_size: 500 }
     if (selectedCondominioFilter.value) {
       params.condominio = selectedCondominioFilter.value
     }

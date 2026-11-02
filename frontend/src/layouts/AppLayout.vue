@@ -14,24 +14,53 @@
         </div>
       </div>
 
-      <!-- Perfil Ativo Badge -->
-      <div class="p-4 mx-3 my-3 bg-slate-800/80 rounded-xl border border-slate-700/60">
-        <div class="flex items-center justify-between mb-1.5">
-          <span class="text-xs font-semibold uppercase tracking-wider text-slate-400">Perfil Ativo</span>
-          <span class="text-xs px-2 py-0.5 rounded-full font-medium" :class="roleBadgeClass">
-            {{ roleDisplayName }}
-          </span>
+      <!-- Card Usuário & Condomínio no Menu Lateral -->
+      <div class="p-3.5 mx-3 my-2.5 bg-slate-800/90 rounded-2xl border border-slate-700/70 shadow-sm space-y-3">
+        <!-- Usuário & Papel -->
+        <div class="flex items-center space-x-3">
+          <div class="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center font-bold text-white text-base shadow-md shrink-0">
+            {{ (authStore.user?.first_name || authStore.user?.username || 'U').charAt(0).toUpperCase() }}
+          </div>
+          <div class="min-w-0 flex-1">
+            <p class="text-xs font-bold text-white truncate">
+              {{ authStore.user?.first_name ? `${authStore.user.first_name} ${authStore.user.last_name || ''}` : authStore.user?.username }}
+            </p>
+            <div class="flex items-center gap-1.5 mt-0.5">
+              <span class="inline-block text-[10px] px-2 py-0.5 rounded-full font-semibold" :class="roleBadgeClass">
+                {{ roleDisplayName }}
+              </span>
+            </div>
+          </div>
         </div>
-        <p class="text-sm font-medium text-white truncate">{{ authStore.user?.username }}</p>
-        <p class="text-xs text-slate-400 truncate">{{ authStore.user?.email || 'Sem email cadastrado' }}</p>
 
-        <!-- Seletor rápido de Perfil (caso o usuário tenha múltiplos vínculos ou seja admin) -->
-        <div v-if="authStore.user?.perfis?.length > 1 || authStore.user?.is_superuser" class="mt-3 pt-2 border-t border-slate-700">
-          <label class="block text-[11px] text-slate-400 mb-1">Alternar Visão de Perfil:</label>
+        <!-- Condomínio Ativo -->
+        <div class="pt-2 border-t border-slate-700/60">
+          <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1 flex items-center gap-1">
+            <span>🏢</span> Condomínio Ativo
+          </label>
+          <div v-if="meusCondominios.length > 1 || authStore.user?.is_superuser">
+            <select
+              :value="authStore.activeCondominioId"
+              @change="handleCondominioChange($event.target.value)"
+              class="w-full text-xs font-semibold bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-white focus:outline-none focus:border-blue-500 shadow-inner"
+            >
+              <option v-for="c in meusCondominios" :key="c.id" :value="String(c.id)">
+                {{ c.nome }}
+              </option>
+            </select>
+          </div>
+          <div v-else class="text-xs font-semibold text-slate-200 bg-slate-900/80 px-2.5 py-1.5 rounded-lg border border-slate-700/60 truncate">
+            {{ meusCondominios[0]?.nome || 'Condomínio Vinculado' }}
+          </div>
+        </div>
+
+        <!-- Seletor rápido de Perfil (caso o usuário tenha múltiplos perfis) -->
+        <div v-if="authStore.user?.perfis?.length > 1 || authStore.user?.is_superuser" class="pt-2 border-t border-slate-700/60">
+          <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Alternar Visão:</label>
           <select 
             :value="authStore.currentRole" 
             @change="handleProfileChange($event.target.value)"
-            class="w-full text-xs bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-slate-200 focus:outline-none focus:border-blue-500"
+            class="w-full text-xs bg-slate-950 border border-slate-700 rounded-lg px-2 py-1 text-slate-200 focus:outline-none focus:border-blue-500"
           >
             <option value="SINDICO">Síndico (Total)</option>
             <option value="SUBSINDICO">Subsíndico</option>
@@ -53,6 +82,82 @@
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
           </svg>
           Dashboard
+        </router-link>
+
+        <div v-if="canViewManagement" class="pt-3 pb-1 px-3 text-xs font-semibold uppercase tracking-wider text-slate-400">
+          Prestação de Contas
+        </div>
+
+        <router-link
+          v-if="canViewManagement"
+          to="/prestacao"
+          class="flex items-center px-3 py-2 rounded-lg text-sm font-medium transition-colors"
+          :class="$route.path === '/prestacao' ? 'bg-blue-600 text-white shadow' : 'text-slate-300 hover:bg-slate-800 hover:text-white'"
+        >
+          <svg class="w-5 h-5 mr-3 text-slate-400 group-hover:text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+          </svg>
+          Dashboard Financeiro
+        </router-link>
+
+        <router-link
+          v-if="canViewManagement"
+          to="/prestacao/periodos"
+          class="flex items-center px-3 py-2 rounded-lg text-sm font-medium transition-colors"
+          :class="$route.path.startsWith('/prestacao/periodos') ? 'bg-blue-600 text-white shadow' : 'text-slate-300 hover:bg-slate-800 hover:text-white'"
+        >
+          <svg class="w-5 h-5 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+          </svg>
+          Períodos & Parâmetros
+        </router-link>
+
+        <router-link
+          v-if="canViewManagement"
+          to="/prestacao/pagamentos"
+          class="flex items-center px-3 py-2 rounded-lg text-sm font-medium transition-colors"
+          :class="$route.path.startsWith('/prestacao/pagamentos') ? 'bg-blue-600 text-white shadow' : 'text-slate-300 hover:bg-slate-800 hover:text-white'"
+        >
+          <svg class="w-5 h-5 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          Lançar Pagamentos
+        </router-link>
+
+        <router-link
+          v-if="canViewManagement"
+          to="/prestacao/despesas"
+          class="flex items-center px-3 py-2 rounded-lg text-sm font-medium transition-colors"
+          :class="$route.path.startsWith('/prestacao/despesas') ? 'bg-blue-600 text-white shadow' : 'text-slate-300 hover:bg-slate-800 hover:text-white'"
+        >
+          <svg class="w-5 h-5 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
+          </svg>
+          Despesas (Fixas/Var.)
+        </router-link>
+
+        <router-link
+          v-if="canViewManagement"
+          to="/prestacao/relatorio"
+          class="flex items-center px-3 py-2 rounded-lg text-sm font-medium transition-colors"
+          :class="$route.path.startsWith('/prestacao/relatorio') ? 'bg-blue-600 text-white shadow' : 'text-slate-300 hover:bg-slate-800 hover:text-white'"
+        >
+          <svg class="w-5 h-5 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+          Prestação de Contas
+        </router-link>
+
+        <router-link
+          v-if="canViewManagement"
+          to="/prestacao/morador"
+          class="flex items-center px-3 py-2 rounded-lg text-sm font-medium transition-colors"
+          :class="$route.path.startsWith('/prestacao/morador') ? 'bg-blue-600 text-white shadow' : 'text-slate-300 hover:bg-slate-800 hover:text-white'"
+        >
+          <svg class="w-5 h-5 mr-3 text-emerald-400 group-hover:text-emerald-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          Prestações Publicadas
         </router-link>
 
         <div v-if="canViewManagement" class="pt-3 pb-1 px-3 text-xs font-semibold uppercase tracking-wider text-slate-400">
@@ -149,6 +254,29 @@
           </svg>
           Meu Espaço (Unidades)
         </router-link>
+
+        <router-link
+          to="/prestacao/morador"
+          class="flex items-center px-3 py-2 rounded-lg text-sm font-medium transition-colors"
+          :class="$route.path.startsWith('/prestacao/morador') ? 'bg-blue-600 text-white shadow' : 'text-slate-300 hover:bg-slate-800 hover:text-white'"
+        >
+          <svg class="w-5 h-5 mr-3 text-emerald-400 group-hover:text-emerald-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          Prestações Publicadas
+        </router-link>
+
+        <router-link
+          v-if="!canViewManagement"
+          to="/prestacao/relatorio"
+          class="flex items-center px-3 py-2 rounded-lg text-sm font-medium transition-colors"
+          :class="$route.path.startsWith('/prestacao/relatorio') ? 'bg-blue-600 text-white shadow' : 'text-slate-300 hover:bg-slate-800 hover:text-white'"
+        >
+          <svg class="w-5 h-5 mr-3 text-slate-400 group-hover:text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+          Relatório de Prestação
+        </router-link>
       </nav>
 
       <!-- Footer logout -->
@@ -167,45 +295,6 @@
 
     <!-- Main Content Area -->
     <div class="flex-1 flex flex-col min-w-0 overflow-hidden">
-      <!-- Top Header -->
-      <header class="h-16 bg-white border-b border-slate-200 px-6 flex items-center justify-between z-10">
-        <div class="flex items-center space-x-3">
-          <!-- Seletor / Indicador de Condomínio Ativo -->
-          <div v-if="meusCondominios.length > 0" class="flex items-center space-x-2 bg-slate-100 py-1.5 px-3 rounded-xl border border-slate-200">
-            <span class="text-xs font-semibold text-slate-500">🏢 Condomínio:</span>
-            <select
-              v-if="meusCondominios.length > 1 || authStore.user?.is_superuser"
-              :value="authStore.activeCondominioId"
-              @change="handleCondominioChange($event.target.value)"
-              class="text-xs font-bold text-slate-800 bg-transparent border-0 focus:outline-none cursor-pointer"
-            >
-              <option v-for="c in meusCondominios" :key="c.id" :value="String(c.id)">
-                {{ c.nome }}
-              </option>
-            </select>
-            <span v-else class="text-xs font-bold text-slate-800">
-              {{ meusCondominios[0]?.nome }}
-            </span>
-          </div>
-
-          <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-emerald-100 text-emerald-800">
-            JWT Autenticado
-          </span>
-        </div>
-
-        <div class="flex items-center space-x-4">
-          <div class="text-right">
-            <p class="text-sm font-semibold text-slate-800 leading-tight">
-              {{ authStore.user?.first_name ? `${authStore.user.first_name} ${authStore.user.last_name || ''}` : authStore.user?.username }}
-            </p>
-            <p class="text-xs text-slate-500">{{ roleDisplayName }}</p>
-          </div>
-          <div class="w-9 h-9 rounded-full bg-slate-100 border border-slate-300 flex items-center justify-center font-bold text-slate-700">
-            {{ (authStore.user?.username || 'U').charAt(0).toUpperCase() }}
-          </div>
-        </div>
-      </header>
-
       <!-- Main Body -->
       <main class="flex-1 overflow-y-auto p-6 md:p-8 bg-slate-50">
         <router-view />
@@ -229,7 +318,8 @@ const fetchCondos = async () => {
     const res = await apiClient.get("/condominios/")
     listaCondominiosGeral.value = res.data.results || res.data
     if (!authStore.activeCondominioId && listaCondominiosGeral.value.length > 0) {
-      authStore.setActiveCondominio(listaCondominiosGeral.value[0].id)
+      const preferencial = listaCondominiosGeral.value.find(c => c.id === 3) || listaCondominiosGeral.value[0]
+      authStore.setActiveCondominio(preferencial.id)
     }
   } catch (err) {
     console.error("Erro ao buscar condomínios:", err)
@@ -282,23 +372,16 @@ const roleBadgeClass = computed(() => {
 })
 
 const canViewManagement = computed(() => {
-  if (authStore.user?.is_superuser) return true
   return ["SINDICO", "SUBSINDICO", "CONSELHEIRO"].includes(authStore.currentRole)
 })
 
 const canViewUsers = computed(() => {
-  if (authStore.user?.is_superuser) return true
   return ["SINDICO", "SUBSINDICO"].includes(authStore.currentRole)
 })
 
 const handleProfileChange = (role) => {
   authStore.setActiveProfile(role)
-  // Se mudar para condômino, redireciona para a página apropriada
-  if (role === "CONDOMINO") {
-    router.push("/meu-espaco")
-  } else {
-    router.push("/")
-  }
+  window.location.reload()
 }
 
 const handleLogout = () => {

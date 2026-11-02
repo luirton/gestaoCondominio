@@ -14,6 +14,59 @@ Possui controle de acesso baseado em papéis (**RBAC**), isolamento seguro de da
 
 ---
 
+## 💼 Módulo de Gestão de Prestação de Contas
+
+O módulo substitui integralmente planilhas manuais de condomínio (baseado no caso real do **Condomínio Hortências III**, Fortaleza/CE), sanando as fragilidades de fórmulas e garantindo rastreabilidade histórica.
+
+### 🏛️ As 6 Telas do Módulo:
+1. **Dashboard Financeiro (`/prestacao`):**
+   - Cards em tempo real: Total Receitas, Total Despesas, Saldo do Mês, Saldo Bancário Final.
+   - Status do período atual (ABERTO, FECHADO, PUBLICADO).
+   - Alertas preventivos: inadimplência/cotas pendentes e despesas sem comprovante.
+   - Gráfico de evolução de receitas vs despesas.
+2. **Configuração do Período (`/prestacao/periodos`):**
+   - Espelho da aba `PROPRIEDADES` com validações de datas.
+   - Parâmetros: valor da cota (R$ 380,00), vaga de estacionamento (R$ 100,00), saldos anteriores (CC, CDB, Porquinho Férias/13º).
+   - Botão **"Gerar Cotas"** para criação em lote para as 52 unidades.
+3. **Lançamento de Pagamentos (`/prestacao/pagamentos`):**
+   - Espelho da aba `PAGAMENTOS` com tabela editável de 52 unidades.
+   - Baixa em lote ("Marcar selecionadas como pagas").
+   - Cálculo automático de juros e multa para pagamentos a maior ou fora do prazo.
+   - Seção dedicada de **Receitas Extras** (aluguel de vagas, rendimento CDB, acordos).
+4. **Gestão de Despesas (`/prestacao/despesas`):**
+   - Categorização pré-definida de despesas Fixas e Variáveis.
+   - Upload de comprovantes fiscais (PDF e imagem).
+   - Filtros dinâmicos e cards totalizadores.
+5. **Prestação de Contas Balancete (`/prestacao/relatorio`):**
+   - Reprodução idêntica da aba `PRESTAÇÃO` da planilha.
+   - Exportação para **PDF** oficial (ReportLab) e **Excel** (.xlsx multi-aba via OpenPyXL).
+   - Observação automática da diferença de cotas:
+     > *"A diferença entre o SALDO MÊS e o TOTAL DO SALDO BANCÁRIO é de X cota(s) referente ao mês de [MÊS] com vencimento em [DATA]"*
+   - Assinatura digital do síndico (Nome, CPF e Data).
+   - Ações de **Fechar Período** (gera snapshot congelado) e **Publicar**.
+6. **Área do Morador (`/prestacao/morador`):**
+   - Consulta de cotas pagas/pendentes da unidade do condômino.
+   - Acesso e download das prestações de contas oficiais aprovadas e publicadas.
+
+### ⚙️ Comando de Carga & Migração da Planilha:
+Para carregar os dados reais da planilha do Condomínio Hortências III (52 casas + período 09/2026 100% conferido):
+```bash
+python manage.py migrar_prestacao_hortencias
+```
+
+### 🧪 Execução de Testes Automatizados:
+- **Backend (Regras de Negócio e Cálculos - Django Test):**
+  ```bash
+  python manage.py test financeiro
+  ```
+- **Frontend (Regras de Cálculo e Utilitários - Vitest):**
+  ```bash
+  cd frontend
+  npm test
+  ```
+
+---
+
 ## 📑 Sumário
 
 - [Destaques e Funcionalidades](#-destaques-e-funcionalidades)
@@ -43,6 +96,7 @@ Possui controle de acesso baseado em papéis (**RBAC**), isolamento seguro de da
 - **Super Painel Global:** Interface autônoma e leve para o administrador geral cadastrar novos condomínios e gerenciar a base sem restrições.
 - **Auto-Cadastro de Morador:** Fluxo de primeiro acesso na tela de login validando o CPF diretamente contra a base de moradores pré-cadastrada pela administração predial, com disparo automático de e-mail de confirmação.
 - **Preparado para o Módulo Financeiro:** Unidades com validação de responsável legal/financeiro único e entidades prontas para cobranças, boletos e rateios.
+- **Módulo de Prestação de Contas (100% Integrado):** Gestão orçamentária mensal com cálculo rigoroso de balancete, fechamento imutável com snapshots, conciliação com extrato bancário, observação automática da diferença de cotas, exportação em PDF corporativo e Excel multi-aba idêntico à planilha original, além de portal de transparência para o morador.
 - **Máscaras e Validações Dinâmicas:** Formatação amigável para CPF, CNPJ, Telefones e CEPs com validações preventivas contra duplicidade.
 
 ---

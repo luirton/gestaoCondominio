@@ -264,8 +264,8 @@ const form = ref({
 const fetchAuxiliaryData = async () => {
   try {
     const [resPessoas, resUnidades] = await Promise.all([
-      apiClient.get("/pessoas/"),
-      apiClient.get("/unidades/"),
+      apiClient.get("/pessoas/", { params: { page_size: 500 } }),
+      apiClient.get("/unidades/", { params: { page_size: 500 } }),
     ])
     pessoas.value = resPessoas.data.results || resPessoas.data
     unidades.value = resUnidades.data.results || resUnidades.data

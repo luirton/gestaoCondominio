@@ -12,6 +12,12 @@ import FuncionariosView from "@/views/FuncionariosView.vue"
 import CargosView from "@/views/CargosView.vue"
 import UsuariosView from "@/views/UsuariosView.vue"
 import MeuEspacoView from "@/views/MeuEspacoView.vue"
+import DashboardFinanceiroView from "@/views/prestacao/DashboardFinanceiroView.vue"
+import ConfiguracaoPeriodoView from "@/views/prestacao/ConfiguracaoPeriodoView.vue"
+import LancamentoPagamentosView from "@/views/prestacao/LancamentoPagamentosView.vue"
+import DespesasView from "@/views/prestacao/DespesasView.vue"
+import RelatorioPrestacaoView from "@/views/prestacao/RelatorioPrestacaoView.vue"
+import AreaMoradorPrestacaoView from "@/views/prestacao/AreaMoradorPrestacaoView.vue"
 
 const routes = [
   {
@@ -76,7 +82,44 @@ const routes = [
         path: "meu-espaco",
         name: "MeuEspaco",
         component: MeuEspacoView,
-        meta: { allowedRoles: ["CONDOMINO", "SINDICO", "SUBSINDICO"] },
+        meta: { allowedRoles: ["CONDOMINO", "SINDICO", "SUBSINDICO", "CONSELHEIRO"] },
+      },
+      // Módulo de Prestação de Contas (Financeiro)
+      {
+        path: "prestacao",
+        name: "PrestacaoDashboard",
+        component: DashboardFinanceiroView,
+        meta: { allowedRoles: ["SINDICO", "SUBSINDICO", "CONSELHEIRO"] },
+      },
+      {
+        path: "prestacao/periodos",
+        name: "PrestacaoPeriodos",
+        component: ConfiguracaoPeriodoView,
+        meta: { allowedRoles: ["SINDICO", "SUBSINDICO", "CONSELHEIRO"] },
+      },
+      {
+        path: "prestacao/pagamentos/:periodoId?",
+        name: "PrestacaoPagamentos",
+        component: LancamentoPagamentosView,
+        meta: { allowedRoles: ["SINDICO", "SUBSINDICO", "CONSELHEIRO"] },
+      },
+      {
+        path: "prestacao/despesas/:periodoId?",
+        name: "PrestacaoDespesas",
+        component: DespesasView,
+        meta: { allowedRoles: ["SINDICO", "SUBSINDICO", "CONSELHEIRO"] },
+      },
+      {
+        path: "prestacao/relatorio/:periodoId?",
+        name: "PrestacaoRelatorio",
+        component: RelatorioPrestacaoView,
+        meta: { allowedRoles: ["SINDICO", "SUBSINDICO", "CONSELHEIRO", "CONDOMINO"] },
+      },
+      {
+        path: "prestacao/morador",
+        name: "PrestacaoMorador",
+        component: AreaMoradorPrestacaoView,
+        meta: { allowedRoles: ["CONDOMINO", "SINDICO", "SUBSINDICO", "CONSELHEIRO"] },
       },
     ],
   },

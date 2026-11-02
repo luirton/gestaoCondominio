@@ -138,7 +138,12 @@ class CondominioSerializer(serializers.ModelSerializer):
 class PessoaSerializer(serializers.ModelSerializer):
     tem_usuario = serializers.SerializerMethodField()
     usuario_id = serializers.SerializerMethodField()
-    # Campo unidade_id OBRIGATÓRIO no cadastro de nova pessoa
+    condominio_id = serializers.SerializerMethodField()
+    condominio_nome = serializers.SerializerMethodField()
+    unidade_identificador = serializers.SerializerMethodField()
+    unidades_vinculadas = serializers.SerializerMethodField()
+
+    # Campos de escrita para vincular pessoa a condomínio/unidade
     unidade_id = serializers.IntegerField(write_only=True, required=False, allow_null=True)
     tipo_vinculo = serializers.CharField(write_only=True, required=False, default="MORADOR")
     responsavel = serializers.BooleanField(write_only=True, required=False, default=False)
@@ -155,6 +160,10 @@ class PessoaSerializer(serializers.ModelSerializer):
             "data_nascimento",
             "tem_usuario",
             "usuario_id",
+            "condominio_id",
+            "condominio_nome",
+            "unidade_identificador",
+            "unidades_vinculadas",
             "unidade_id",
             "tipo_vinculo",
             "responsavel",
@@ -164,20 +173,30 @@ class PessoaSerializer(serializers.ModelSerializer):
         ]
 
     def validate(self, attrs):
-        # Na criação (sem instance), unidade_id é obrigatório
-        if not self.instance:
-            unidade_id = attrs.get("unidade_id")
-            if not unidade_id:
+        user = self.context.get("request").user if self.context.get("request") else None
+        is_superuser = user and user.is_superuser
+
+        unidade_id = attrs.get("unidade_id")
+        responsavel = attrs.get("responsavel", False)
+
+        # Na criação, unidade_id é obrigatório para usuários comuns
+        if not self.instance and not is_superuser and not unidade_id:
+            raise serializers.ValidationError({
+                "unidade_id": "O vínculo com a unidade do condomínio é obrigatório no cadastro da pessoa."
+            })
+
+        # Se for informado que é responsável, valida duplicidade de responsável ativo
+        if unidade_id and responsavel:
+            qs = VinculoPessoaUnidade.objects.filter(
+                unidade_id=unidade_id, responsavel=True, data_fim__isnull=True
+            )
+            if self.instance:
+                qs = qs.exclude(pessoa=self.instance)
+            if qs.exists():
                 raise serializers.ValidationError({
-                    "unidade_id": "O vínculo com a unidade do condomínio é obrigatório no cadastro da pessoa."
+                    "responsavel": "Esta unidade já possui um responsável ativo cadastrado. Desmarque ou altere o anterior."
                 })
-            
-            responsavel = attrs.get("responsavel", False)
-            if responsavel:
-                if VinculoPessoaUnidade.objects.filter(unidade_id=unidade_id, responsavel=True, data_fim__isnull=True).exists():
-                    raise serializers.ValidationError({
-                        "responsavel": "Esta unidade já possui um responsável ativo cadastrado. Desmarque ou altere o anterior."
-                    })
+
         return attrs
 
     def get_tem_usuario(self, obj):
@@ -185,6 +204,43 @@ class PessoaSerializer(serializers.ModelSerializer):
 
     def get_usuario_id(self, obj):
         return obj.usuario.id if hasattr(obj, "usuario") and obj.usuario else None
+
+    def get_condominio_id(self, obj):
+        v = obj.vinculos_unidade.filter(data_fim__isnull=True).select_related("unidade__condominio").first()
+        if v and v.unidade and v.unidade.condominio:
+            return v.unidade.condominio.id
+        f = getattr(obj, "dados_funcionario", None)
+        if f and hasattr(f, "first") and f.filter(ativo=True).exists():
+            return f.filter(ativo=True).first().condominio_id
+        return None
+
+    def get_condominio_nome(self, obj):
+        v = obj.vinculos_unidade.filter(data_fim__isnull=True).select_related("unidade__condominio").first()
+        if v and v.unidade and v.unidade.condominio:
+            return v.unidade.condominio.nome
+        f = getattr(obj, "dados_funcionario", None)
+        if f and hasattr(f, "first") and f.filter(ativo=True).exists():
+            return f.filter(ativo=True).first().condominio.nome
+        return None
+
+    def get_unidade_identificador(self, obj):
+        v = obj.vinculos_unidade.filter(data_fim__isnull=True).select_related("unidade").first()
+        return v.unidade.identificador if v and v.unidade else None
+
+    def get_unidades_vinculadas(self, obj):
+        vinculos = obj.vinculos_unidade.filter(data_fim__isnull=True).select_related("unidade__condominio")
+        return [
+            {
+                "vinculo_id": v.id,
+                "unidade_id": v.unidade.id,
+                "unidade_identificador": v.unidade.identificador,
+                "condominio_id": v.unidade.condominio.id,
+                "condominio_nome": v.unidade.condominio.nome,
+                "tipo": v.tipo,
+                "responsavel": v.responsavel,
+            }
+            for v in vinculos
+        ]
 
     def create(self, validated_data):
         unidade_id = validated_data.pop("unidade_id", None)
@@ -204,6 +260,36 @@ class PessoaSerializer(serializers.ModelSerializer):
                 responsavel=responsavel,
                 data_inicio=data_inicio or date.today()
             )
+
+        return pessoa
+
+    def update(self, instance, validated_data):
+        unidade_id = validated_data.pop("unidade_id", None)
+        tipo_vinculo = validated_data.pop("tipo_vinculo", None)
+        responsavel = validated_data.pop("responsavel", None)
+        data_inicio = validated_data.pop("data_inicio_vinculo", None)
+
+        pessoa = super().update(instance, validated_data)
+
+        if unidade_id:
+            from datetime import date
+            # Procura vínculo ativo
+            vinculo = VinculoPessoaUnidade.objects.filter(pessoa=pessoa, data_fim__isnull=True).first()
+            if vinculo:
+                vinculo.unidade_id = unidade_id
+                if tipo_vinculo:
+                    vinculo.tipo = tipo_vinculo
+                if responsavel is not None:
+                    vinculo.responsavel = responsavel
+                vinculo.save()
+            else:
+                VinculoPessoaUnidade.objects.create(
+                    pessoa=pessoa,
+                    unidade_id=unidade_id,
+                    tipo=tipo_vinculo or "MORADOR",
+                    responsavel=responsavel if responsavel is not None else False,
+                    data_inicio=data_inicio or date.today()
+                )
 
         return pessoa
 
@@ -358,6 +444,7 @@ class CargoCondominialSerializer(serializers.ModelSerializer):
             "data_inicio",
             "data_fim",
             "ativo",
+            "isento_condominio",
             "created_at",
             "updated_at",
         ]
@@ -394,6 +481,8 @@ class UsuarioSerializer(serializers.ModelSerializer):
     pessoa_nome = serializers.CharField(source="pessoa.nome", read_only=True)
     password = serializers.CharField(write_only=True, required=False)
     vinculos_condominios = UsuarioCondominioSerializer(source="condominios", many=True, read_only=True)
+    condominio_id = serializers.IntegerField(write_only=True, required=False, allow_null=True)
+    perfil = serializers.CharField(write_only=True, required=False, allow_null=True)
 
     class Meta:
         model = Usuario
@@ -410,6 +499,8 @@ class UsuarioSerializer(serializers.ModelSerializer):
             "is_superuser",
             "password",
             "vinculos_condominios",
+            "condominio_id",
+            "perfil",
             "created_at",
             "updated_at",
         ]
@@ -417,19 +508,50 @@ class UsuarioSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         password = validated_data.pop("password", None)
+        condominio_id = validated_data.pop("condominio_id", None)
+        perfil_codigo = validated_data.pop("perfil", None)
         user = Usuario(**validated_data)
         if password:
             user.set_password(password)
         else:
             user.set_unusable_password()
         user.save()
+
+        if condominio_id and perfil_codigo:
+            try:
+                perfil_obj = Perfil.objects.get(codigo=perfil_codigo)
+                UsuarioCondominio.objects.update_or_create(
+                    usuario=user,
+                    condominio_id=condominio_id,
+                    defaults={"perfil": perfil_obj, "ativo": True},
+                )
+            except (Perfil.DoesNotExist, Exception):
+                pass
+
         return user
 
     def update(self, instance, validated_data):
         password = validated_data.pop("password", None)
+        condominio_id = validated_data.pop("condominio_id", None)
+        perfil_codigo = validated_data.pop("perfil", None)
+        # Bloqueia alteração da pessoa física vinculada na edição de usuário existente
+        validated_data.pop("pessoa", None)
+
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         if password:
             instance.set_password(password)
         instance.save()
+
+        if condominio_id and perfil_codigo:
+            try:
+                perfil_obj = Perfil.objects.get(codigo=perfil_codigo)
+                UsuarioCondominio.objects.update_or_create(
+                    usuario=instance,
+                    condominio_id=condominio_id,
+                    defaults={"perfil": perfil_obj, "ativo": True},
+                )
+            except (Perfil.DoesNotExist, Exception):
+                pass
+
         return instance
