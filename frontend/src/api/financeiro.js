@@ -124,6 +124,72 @@ export const financeiroApi = {
   getAreaMorador(params = {}) {
     return apiClient.get("/financeiro/morador/", { params })
   },
+
+  // Módulo de Inadimplência e Cobrança
+  getInadimplenciaGeral(params = {}) {
+    return apiClient.get("/financeiro/inadimplencia/", { params })
+  },
+  getInadimplenciaUnidade(unidadeId, params = {}) {
+    return apiClient.get(`/financeiro/inadimplencia/unidade/${unidadeId}/`, { params })
+  },
+  getInadimplenciaConsolidadaMorador() {
+    return apiClient.get("/financeiro/inadimplencia/morador/consolidado/")
+  },
+  getAvisoDebitoPdf(unidadeId) {
+    return apiClient.get(`/financeiro/inadimplencia/unidade/${unidadeId}/pdf/`, {
+      responseType: "blob",
+    })
+  },
+  getAvisoDebitoConsolidadoPdf() {
+    return apiClient.get("/financeiro/inadimplencia/morador/consolidado/pdf/", {
+      responseType: "blob",
+    })
+  },
+  getAvisoDebitoPdfUrl(unidadeId) {
+    const base = apiClient.defaults.baseURL || "/api"
+    return `${base}/financeiro/inadimplencia/unidade/${unidadeId}/pdf/`
+  },
+  enviarEmailCobranca(unidadeId, data) {
+    return apiClient.post(`/financeiro/inadimplencia/unidade/${unidadeId}/enviar-email/`, data)
+  },
+  getParametrosCobranca() {
+    return apiClient.get("/financeiro/parametros-cobranca/atual/")
+  },
+  getHistoricoParametrosCobranca() {
+    return apiClient.get("/financeiro/parametros-cobranca/historico/")
+  },
+  salvarParametrosCobranca(data) {
+    return apiClient.post("/financeiro/parametros-cobranca/atual/", data)
+  },
+  getHistoricoCobrancas(params = {}) {
+    return apiClient.get("/financeiro/historico-cobrancas/", { params })
+  },
+
+  // Declaração de Nada Consta
+  emitirNadaConsta(unidadeId) {
+    return apiClient.post("/financeiro/nada-consta/emitir/", { unidade_id: unidadeId })
+  },
+  emitirNadaConstaConsolidado() {
+    return apiClient.post("/financeiro/nada-consta/morador/consolidado/")
+  },
+  getNadaConstaPdf(certidaoId, unidadesMulti = "") {
+    const params = unidadesMulti ? { unidades_multi: unidadesMulti } : {}
+    return apiClient.get(`/financeiro/nada-consta/${certidaoId}/pdf/`, {
+      params,
+      responseType: "blob",
+    })
+  },
+  getNadaConstaConsolidadoPdf(ids = "") {
+    const params = ids ? { ids } : {}
+    return apiClient.get("/financeiro/nada-consta/morador/consolidado/pdf/", {
+      params,
+      responseType: "blob",
+    })
+  },
+  getNadaConstaPdfUrl(certidaoId) {
+    const base = apiClient.defaults.baseURL || "/api"
+    return `${base}/financeiro/nada-consta/${certidaoId}/pdf/`
+  },
 }
 
 export default financeiroApi

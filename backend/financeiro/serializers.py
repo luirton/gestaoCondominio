@@ -10,6 +10,10 @@ from .models import (
     Despesa,
     SaldoPeriodo,
     AuditLog,
+    ParametroCobranca,
+    AcordoDescontoCota,
+    CertidaoNadaConsta,
+    HistoricoNotificacaoCobranca,
 )
 from .services import calcular_totais_periodo
 
@@ -392,3 +396,40 @@ class AuditLogSerializer(serializers.ModelSerializer):
     class Meta:
         model = AuditLog
         fields = "__all__"
+
+
+class ParametroCobrancaSerializer(serializers.ModelSerializer):
+    tipo_multa_display = serializers.CharField(source="get_tipo_multa_display", read_only=True)
+
+    class Meta:
+        model = ParametroCobranca
+        fields = "__all__"
+
+
+class AcordoDescontoCotaSerializer(serializers.ModelSerializer):
+    status_display = serializers.CharField(source="get_status_display", read_only=True)
+    unidade_identificador = serializers.CharField(source="cota.unidade.identificador", read_only=True)
+    periodo_rotulo = serializers.CharField(source="cota.periodo.mes_referencia_rotulo", read_only=True)
+
+    class Meta:
+        model = AcordoDescontoCota
+        fields = "__all__"
+
+
+class CertidaoNadaConstaSerializer(serializers.ModelSerializer):
+    unidade_identificador = serializers.CharField(source="unidade.identificador", read_only=True)
+    condominio_nome = serializers.CharField(source="condominio.nome", read_only=True)
+
+    class Meta:
+        model = CertidaoNadaConsta
+        fields = "__all__"
+
+
+class HistoricoNotificacaoCobrancaSerializer(serializers.ModelSerializer):
+    unidade_identificador = serializers.CharField(source="unidade.identificador", read_only=True)
+    enviado_por_nome = serializers.CharField(source="enviado_por.username", read_only=True)
+
+    class Meta:
+        model = HistoricoNotificacaoCobranca
+        fields = "__all__"
+

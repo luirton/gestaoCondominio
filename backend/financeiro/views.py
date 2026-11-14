@@ -595,15 +595,20 @@ class AreaMoradorPrestacaoView(APIView):
         if not user.is_authenticated:
             return Response({"error": "Não autenticado"}, status=status.HTTP_401_UNAUTHORIZED)
 
-        # Encontra as unidades da pessoa logada
-        unidades_ids = []
-        if hasattr(user, "pessoa") and user.pessoa:
-            unidades_ids = list(
-                user.pessoa.vinculos_unidade.filter(data_fim__isnull=True).values_list("unidade_id", flat=True)
-            )
-
         conds = get_request_condominios(request)
         cond_param = request.headers.get("X-Condominio-Id") or request.query_params.get("condominio")
+
+        # Encontra as unidades da pessoa logada no condomínio ativo
+        unidades_ids = []
+        if hasattr(user, "pessoa") and user.pessoa:
+            v_qs = user.pessoa.vinculos_unidade.filter(data_fim__isnull=True)
+            if cond_param:
+                try:
+                    cid = int(cond_param)
+                    v_qs = v_qs.filter(unidade__condominio_id=cid)
+                except (ValueError, TypeError):
+                    pass
+            unidades_ids = list(v_qs.values_list("unidade_id", flat=True))
 
         periodos_publicados = PeriodoPrestacao.objects.filter(
             status=PeriodoPrestacao.StatusPeriodo.PUBLICADO
@@ -655,17 +660,38 @@ class AreaMoradorPrestacaoView(APIView):
                 "unidades_total": p.cotas.count(),
             })
 
-        # Cotas do morador
+        # Cotas do morador (apenas das unidades vinculadas ao usuário logado e de períodos PUBLICADOS)
         minhas_cotas = []
+        minhas_unidades = []
         if unidades_ids:
+            from core.models import Unidade
+            unidades_qs = Unidade.objects.filter(id__in=unidades_ids).order_by("identificador")
+            minhas_unidades = [
+                {"id": u.id, "identificador": u.identificador, "bloco": u.bloco_torre or ""}
+                for u in unidades_qs
+            ]
+
             cotas_qs = ReceitaCota.objects.filter(
-                unidade_id__in=unidades_ids
-            ).select_related("periodo", "unidade").order_by("-periodo__data_inicio_prestacao")
+                unidade_id__in=unidades_ids,
+                periodo__status=PeriodoPrestacao.StatusPeriodo.PUBLICADO
+            )
+            if cond_param:
+                try:
+                    cid = int(cond_param)
+                    cotas_qs = cotas_qs.filter(unidade__condominio_id=cid)
+                except (ValueError, TypeError):
+                    pass
+
+            cotas_qs = cotas_qs.select_related("periodo", "unidade").order_by(
+                "-periodo__data_inicio_prestacao", "unidade__identificador"
+            )
 
             for c in cotas_qs:
                 minhas_cotas.append({
                     "id": c.id,
+                    "unidade_id": c.unidade_id,
                     "unidade": c.unidade.identificador,
+                    "periodo_id": c.periodo_id,
                     "periodo_rotulo": c.periodo.mes_referencia_rotulo,
                     "data_vencimento": c.data_vencimento,
                     "valor_titulo": c.valor_titulo,
@@ -678,5 +704,6 @@ class AreaMoradorPrestacaoView(APIView):
 
         return Response({
             "prestacoes_publicadas": lista_prestas,
-            "minhas_cotas": minhas_cotas
+            "minhas_cotas": minhas_cotas,
+            "minhas_unidades": minhas_unidades,
         })

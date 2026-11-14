@@ -232,30 +232,54 @@
       </div>
 
       <!-- Bloco 2: Minhas Cotas Condominiais (se houver unidades vinculadas ao usuário logado) -->
-      <div v-if="minhasCotas.length > 0" class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
-        <div class="p-4 border-b border-slate-200 bg-slate-50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div v-if="minhasCotas.length > 0" class="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+        <div class="p-4 sm:p-5 border-b border-slate-200 bg-slate-50/80 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
-            <h2 class="font-bold text-slate-800 text-base flex items-center gap-2">
+            <h2 class="font-bold text-slate-900 text-base flex items-center gap-2">
               <span>🏠</span> Minhas Cotas Condominiais
             </h2>
-            <p class="text-xs text-slate-500">Histórico de pagamento e status da cota da sua unidade.</p>
+            <p class="text-xs text-slate-500 mt-0.5">
+              Histórico de cotas publicadas das unidades vinculadas ao seu usuário:
+              <strong class="text-slate-700">{{ minhasUnidades.map(u => u.identificador).join(', ') }}</strong>
+            </p>
           </div>
 
-          <!-- Resumo de status das minhas cotas -->
-          <div class="flex items-center gap-2 text-xs">
-            <span class="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 font-semibold">
-              {{ minhasCotasPagasCount }} quitada{{ minhasCotasPagasCount !== 1 ? 's' : '' }}
-            </span>
-            <span v-if="minhasCotasPendentesCount > 0" class="px-2.5 py-1 rounded-lg bg-rose-50 text-rose-700 border border-rose-200 font-semibold">
-              {{ minhasCotasPendentesCount }} pendente{{ minhasCotasPendentesCount !== 1 ? 's' : '' }}
-            </span>
-            <span v-if="minhasCotasIsentasCount > 0" class="px-2.5 py-1 rounded-lg bg-amber-50 text-amber-800 border border-amber-300 font-semibold">
-              {{ minhasCotasIsentasCount }} isenta{{ minhasCotasIsentasCount !== 1 ? 's' : '' }}
-            </span>
+          <!-- Filtros de Unidade para o Morador -->
+          <div class="flex flex-wrap items-center gap-2.5 text-xs">
+            <!-- Filtro de Unidade (quando o morador tiver mais de uma casa vinculada) -->
+            <div v-if="minhasUnidades.length > 1" class="flex items-center gap-1.5">
+              <label class="font-bold text-slate-600 whitespace-nowrap">Unidade:</label>
+              <select
+                v-model="filtroUnidade"
+                class="bg-white border border-slate-300 rounded-xl px-2.5 py-1.5 text-xs font-semibold text-slate-800 shadow-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+              >
+                <option value="TODAS">Todas as Minhas Unidades ({{ minhasUnidades.length }})</option>
+                <option v-for="u in minhasUnidades" :key="u.id" :value="u.id">
+                  {{ u.identificador }}
+                </option>
+              </select>
+            </div>
+
+            <!-- Resumo de status das minhas cotas filtradas -->
+            <div class="flex items-center gap-1.5 pl-2 border-l border-slate-200">
+              <span class="px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold text-[11px]">
+                {{ minhasCotasPagasCount }} quitada{{ minhasCotasPagasCount !== 1 ? 's' : '' }}
+              </span>
+              <span v-if="minhasCotasPendentesCount > 0" class="px-2 py-0.5 rounded-lg bg-rose-50 text-rose-700 border border-rose-200 font-bold text-[11px]">
+                {{ minhasCotasPendentesCount }} pendente{{ minhasCotasPendentesCount !== 1 ? 's' : '' }}
+              </span>
+              <span v-if="minhasCotasIsentasCount > 0" class="px-2 py-0.5 rounded-lg bg-amber-50 text-amber-800 border border-amber-300 font-bold text-[11px]">
+                {{ minhasCotasIsentasCount }} isenta{{ minhasCotasIsentasCount !== 1 ? 's' : '' }}
+              </span>
+            </div>
           </div>
         </div>
 
-        <table class="w-full text-left border-collapse text-xs">
+        <div v-if="cotasFiltradas.length === 0" class="p-8 text-center text-slate-400 text-xs">
+          Nenhuma cota encontrada para os filtros selecionados.
+        </div>
+
+        <table v-else class="w-full text-left border-collapse text-xs">
           <thead class="bg-slate-100 text-slate-600 uppercase font-semibold">
             <tr>
               <th class="py-3 px-4">Unidade</th>
@@ -270,7 +294,7 @@
           </thead>
           <tbody class="divide-y divide-slate-200">
             <tr
-              v-for="cota in minhasCotas"
+              v-for="cota in cotasFiltradas"
               :key="cota.id"
               class="hover:bg-slate-50 transition-colors"
               :class="{
@@ -350,24 +374,38 @@ import financeiroApi from "@/api/financeiro"
 
 const loading = ref(true)
 const minhasCotas = ref([])
+const minhasUnidades = ref([])
 const prestacoesPublicadas = ref([])
 const selectedPrestacaoId = ref(null)
+
+const filtroUnidade = ref("TODAS")
 
 const currentPrestacao = computed(() => {
   if (!selectedPrestacaoId.value) return prestacoesPublicadas.value[0] || null
   return prestacoesPublicadas.value.find(p => p.id === selectedPrestacaoId.value) || prestacoesPublicadas.value[0] || null
 })
 
+// As cotas do morador independem de qual prestação está selecionada no balancete geral acima
+const cotasFiltradas = computed(() => {
+  return minhasCotas.value.filter(cota => {
+    if (filtroUnidade.value === "TODAS") return true
+    return (
+      String(cota.unidade_id) === String(filtroUnidade.value) ||
+      cota.unidade === filtroUnidade.value
+    )
+  })
+})
+
 const minhasCotasPagasCount = computed(() => {
-  return minhasCotas.value.filter(c => c.status === "PAGO" && !c.isento).length
+  return cotasFiltradas.value.filter(c => c.status === "PAGO" && !c.isento).length
 })
 
 const minhasCotasIsentasCount = computed(() => {
-  return minhasCotas.value.filter(c => c.isento || c.status === "ISENTO").length
+  return cotasFiltradas.value.filter(c => c.isento || c.status === "ISENTO").length
 })
 
 const minhasCotasPendentesCount = computed(() => {
-  return minhasCotas.value.filter(c => !c.isento && c.status !== "ISENTO" && c.status !== "PAGO" && !c.data_pagamento).length
+  return cotasFiltradas.value.filter(c => !c.isento && c.status !== "ISENTO" && c.status !== "PAGO" && !c.data_pagamento).length
 })
 
 function formatDate(val) {
@@ -387,6 +425,7 @@ async function loadData() {
     const activeCondId = localStorage.getItem("active_condominio_id")
     const res = await financeiroApi.getAreaMorador(activeCondId ? { condominio: activeCondId } : {})
     minhasCotas.value = res.data.minhas_cotas || []
+    minhasUnidades.value = res.data.minhas_unidades || []
     prestacoesPublicadas.value = res.data.prestacoes_publicadas || []
     if (prestacoesPublicadas.value.length > 0) {
       selectedPrestacaoId.value = prestacoesPublicadas.value[0].id

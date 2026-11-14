@@ -18,6 +18,8 @@ import LancamentoPagamentosView from "@/views/prestacao/LancamentoPagamentosView
 import DespesasView from "@/views/prestacao/DespesasView.vue"
 import RelatorioPrestacaoView from "@/views/prestacao/RelatorioPrestacaoView.vue"
 import AreaMoradorPrestacaoView from "@/views/prestacao/AreaMoradorPrestacaoView.vue"
+import InadimplenciaView from "@/views/prestacao/InadimplenciaView.vue"
+import MinhaInadimplenciaView from "@/views/MinhaInadimplenciaView.vue"
 
 const routes = [
   {
@@ -84,6 +86,12 @@ const routes = [
         component: MeuEspacoView,
         meta: { allowedRoles: ["CONDOMINO", "SINDICO", "SUBSINDICO", "CONSELHEIRO"] },
       },
+      {
+        path: "minhas-financas",
+        name: "MinhasFinancas",
+        component: MinhaInadimplenciaView,
+        meta: { allowedRoles: ["CONDOMINO", "SINDICO", "SUBSINDICO", "CONSELHEIRO"] },
+      },
       // Módulo de Prestação de Contas (Financeiro)
       {
         path: "prestacao",
@@ -120,6 +128,12 @@ const routes = [
         name: "PrestacaoMorador",
         component: AreaMoradorPrestacaoView,
         meta: { allowedRoles: ["CONDOMINO", "SINDICO", "SUBSINDICO", "CONSELHEIRO"] },
+      },
+      {
+        path: "inadimplencia",
+        name: "Inadimplencia",
+        component: InadimplenciaView,
+        meta: { allowedRoles: ["SINDICO", "SUBSINDICO", "CONSELHEIRO"] },
       },
     ],
   },

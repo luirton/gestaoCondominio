@@ -3,6 +3,7 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.serializers.json import DjangoJSONEncoder
 from decimal import Decimal
+import datetime
 
 
 class TimeStampedModel(models.Model):
@@ -647,3 +648,287 @@ class AuditLog(TimeStampedModel):
 
     def __str__(self):
         return f"[{self.acao}] {self.entidade} #{self.registro_id} por {self.usuario}"
+
+
+# ---------------------------------------------------------------------------
+# Módulo de Inadimplência, Cobrança e Nada Consta
+# ---------------------------------------------------------------------------
+class ParametroCobranca(TimeStampedModel):
+    class TipoMulta(models.TextChoices):
+        FIXO = "FIXO", "Valor Fixo (R$)"
+        PERCENTUAL = "PERCENTUAL", "Percentual (%)"
+
+    condominio = models.ForeignKey(
+        "core.Condominio",
+        on_delete=models.CASCADE,
+        related_name="parametros_cobranca",
+        verbose_name="Condomínio",
+    )
+    data_inicio = models.DateField(
+        default=datetime.date(2024, 1, 1),
+        verbose_name="Data Início da Vigência",
+        help_text="Data inicial em que esta regra passa a vigorar (ex: 2024-01-01)",
+    )
+    data_fim = models.DateField(
+        null=True,
+        blank=True,
+        verbose_name="Data Fim da Vigência",
+        help_text="Data final da vigência. Se em branco, é a regra atual ativa.",
+    )
+    tipo_multa = models.CharField(
+        max_length=20,
+        choices=TipoMulta.choices,
+        default=TipoMulta.FIXO,
+        verbose_name="Tipo de Multa",
+    )
+    valor_multa = models.DecimalField(
+        max_digits=8,
+        decimal_places=2,
+        default=Decimal("10.00"),
+        verbose_name="Valor / Percentual da Multa",
+        help_text="Se Fixo: R$ 10.00; Se Percentual: 2.00 para 2%",
+    )
+    percentual_juros_dia = models.DecimalField(
+        max_digits=6,
+        decimal_places=4,
+        default=Decimal("0.0024"),
+        verbose_name="Juros por Dia (Fator)",
+        help_text="Ex: 0.0024 representa 0,24% ao dia (aproximadamente 2% ao mês em juros pro-rata)",
+    )
+    prazo_negociacao_info = models.CharField(
+        max_length=255,
+        default="O PRAZO PARA NEGOCIAÇÃO OU RENEGOCIAÇÃO DE DÍVIDAS ENCERRA-SE NO FINAL DESTE MÊS.",
+        verbose_name="Texto: Prazo de Negociação",
+    )
+    aviso_protesto_info = models.CharField(
+        max_length=255,
+        default="OS TÍTULOS VENCIDOS E NÃO PAGOS SERÃO PROTESTADOS.",
+        verbose_name="Texto: Aviso de Protesto",
+    )
+    aviso_ajuizamento_info = models.CharField(
+        max_length=255,
+        default="DÉBITOS COM 6 (SEIS) OU MAIS PARCELAS EM ATRASO ESTÃO SUJEITOS A AJUIZAMENTO.",
+        verbose_name="Texto: Aviso de Ajuizamento",
+    )
+    qtd_parcelas_ajuizamento = models.IntegerField(
+        default=6,
+        verbose_name="Qtd. Mínima de Parcelas para Ajuizamento",
+    )
+    email_cobranca = models.EmailField(
+        default="condominiohortenciasiii@gmail.com",
+        verbose_name="E-mail de Contato para Cobrança",
+    )
+    telefone_cobranca = models.CharField(
+        max_length=30,
+        blank=True,
+        default="",
+        verbose_name="Telefone / WhatsApp de Contato",
+    )
+    mensagem_email_padrao = models.TextField(
+        blank=True,
+        default=(
+            "Prezado(a) condômino(a),\n\n"
+            "Constatamos em nosso sistema títulos pendentes referentes à sua unidade no Condomínio Hortências III.\n"
+            "Em anexo enviamos o demonstrativo atualizado de débitos com os cálculos de encargos.\n\n"
+            "Caso já tenha realizado o pagamento ou identifique alguma inconsistência, por favor nos responda com os devidos comprovantes para atualização cadastral.\n\n"
+            "Estamos à disposição para esclarecimentos e propostas de negociação.\n\n"
+            "Atenciosamente,\nAdministração do Condomínio"
+        ),
+        verbose_name="Mensagem Padrão do E-mail de Cobrança",
+    )
+
+    class Meta:
+        verbose_name = "Parâmetro de Cobrança do Condomínio"
+        verbose_name_plural = "Parâmetros de Cobrança do Condomínio"
+        ordering = ["-data_inicio"]
+
+    def __str__(self):
+        status_vig = "Ativa" if not self.data_fim else f"Até {self.data_fim}"
+        return f"Parâmetro Cobrança ({self.data_inicio} - {status_vig}) - {self.condominio.nome}"
+
+    def __str__(self):
+        return f"Parâmetros de Cobrança - {self.condominio.nome}"
+
+
+class AcordoDescontoCota(TimeStampedModel):
+    class StatusAcordo(models.TextChoices):
+        PENDENTE = "PENDENTE", "Pendente"
+        PAGO = "PAGO", "Quitado / Pago"
+        CANCELADO = "CANCELADO", "Cancelado"
+
+    cota = models.ForeignKey(
+        ReceitaCota,
+        on_delete=models.CASCADE,
+        related_name="acordos",
+        verbose_name="Cota em Cobrança",
+    )
+    sindico_autorizador = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="acordos_autorizados",
+        verbose_name="Síndico / Usuário que Autorizou",
+    )
+    valor_acordado = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        verbose_name="Valor Acordado (R$)",
+        help_text="Valor final a pagar acordado (ex: apenas a cota original sem juros/multa)",
+    )
+    desconto_juros_multa = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal("0.00"),
+        verbose_name="Desconto Concedido em Encargos (R$)",
+    )
+    data_limite_pagamento = models.DateField(
+        null=True,
+        blank=True,
+        verbose_name="Data Limite para Quitação do Acordo",
+    )
+    data_pagamento = models.DateField(
+        null=True,
+        blank=True,
+        verbose_name="Data Efetiva de Pagamento",
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=StatusAcordo.choices,
+        default=StatusAcordo.PENDENTE,
+        verbose_name="Status do Acordo",
+    )
+    justificativa_observacao = models.TextField(
+        blank=True,
+        verbose_name="Justificativa / Anotação da Negociação",
+    )
+
+    class Meta:
+        verbose_name = "Acordo / Desconto em Cota"
+        verbose_name_plural = "Acordos / Descontos em Cotas"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"Acordo Cota {self.cota.unidade.identificador} - R$ {self.valor_acordado} ({self.get_status_display()})"
+
+
+class CertidaoNadaConsta(TimeStampedModel):
+    condominio = models.ForeignKey(
+        "core.Condominio",
+        on_delete=models.CASCADE,
+        related_name="certidoes_nada_consta",
+        verbose_name="Condomínio",
+    )
+    unidade = models.ForeignKey(
+        "core.Unidade",
+        on_delete=models.CASCADE,
+        related_name="certidoes_nada_consta",
+        verbose_name="Unidade",
+    )
+    solicitante = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="certidoes_emitidas",
+        verbose_name="Emitido por (Usuário)",
+    )
+    codigo_autenticacao = models.CharField(
+        max_length=64,
+        unique=True,
+        verbose_name="Código de Autenticação",
+        help_text="Código único para validação de veracidade da certidão",
+    )
+    data_emissao = models.DateField(
+        auto_now_add=True,
+        verbose_name="Data de Emissão",
+    )
+    data_validade = models.DateField(
+        verbose_name="Data de Validade (Fim do Mês)",
+    )
+    # Dados congelados no momento da emissão
+    proprietario_nome = models.CharField(max_length=150, verbose_name="Nome do Proprietário")
+    proprietario_cpf = models.CharField(max_length=20, blank=True, verbose_name="CPF do Proprietário")
+    sindico_nome = models.CharField(max_length=150, verbose_name="Nome do Síndico")
+    sindico_cpf = models.CharField(max_length=20, blank=True, verbose_name="CPF do Síndico")
+    sindico_endereco = models.CharField(max_length=255, blank=True, verbose_name="Endereço/Unidade do Síndico")
+    
+    ultima_cota_referencia = models.CharField(
+        max_length=60,
+        blank=True,
+        verbose_name="Mês/Ano da Última Cota Paga",
+        help_text="Ex: JULHO/2024",
+    )
+    ultima_cota_vencimento = models.DateField(
+        null=True,
+        blank=True,
+        verbose_name="Data de Vencimento da Última Cota",
+    )
+    arquivo_pdf = models.FileField(
+        upload_to="certidoes_nada_consta/%Y/%m/",
+        null=True,
+        blank=True,
+        verbose_name="Arquivo PDF Gerado",
+    )
+
+    class Meta:
+        verbose_name = "Declaração de Nada Consta"
+        verbose_name_plural = "Declarações de Nada Consta"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"Nada Consta - {self.unidade.identificador} ({self.codigo_autenticacao[:8]}...)"
+
+
+class HistoricoNotificacaoCobranca(TimeStampedModel):
+    condominio = models.ForeignKey(
+        "core.Condominio",
+        on_delete=models.CASCADE,
+        related_name="notificacoes_cobranca",
+        verbose_name="Condomínio",
+    )
+    unidade = models.ForeignKey(
+        "core.Unidade",
+        on_delete=models.CASCADE,
+        related_name="notificacoes_cobranca",
+        verbose_name="Unidade",
+    )
+    enviado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="cobrancas_enviadas",
+        verbose_name="Enviado por",
+    )
+    destinatario_nome = models.CharField(max_length=150, verbose_name="Nome Destinatário")
+    destinatario_email = models.CharField(max_length=255, verbose_name="E-mails Destinatários")
+    assunto = models.CharField(max_length=255, verbose_name="Assunto")
+    mensagem_enviada = models.TextField(verbose_name="Mensagem Enviada (Corpo do E-mail)")
+    valor_total_devedor = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        verbose_name="Valor Total Devedor Notificado",
+    )
+    qtd_titulos = models.IntegerField(default=1, verbose_name="Quantidade de Títulos em Atraso")
+    status_envio = models.CharField(
+        max_length=30,
+        default="ENVIADO",
+        verbose_name="Status do Envio",
+    )
+    erro_detalhe = models.TextField(blank=True, verbose_name="Detalhes de Erro (se houver)")
+    arquivo_pdf = models.FileField(
+        upload_to="cobrancas_enviadas/%Y/%m/",
+        null=True,
+        blank=True,
+        verbose_name="PDF Anexado ao Envio",
+    )
+
+    class Meta:
+        verbose_name = "Histórico de Notificação de Cobrança"
+        verbose_name_plural = "Históricos de Notificações de Cobrança"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"Notificação {self.unidade.identificador} em {self.created_at.strftime('%d/%m/%Y %H:%M')}"
+
