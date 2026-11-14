@@ -39,11 +39,13 @@ Para permitir que o síndico liquide cotas em atraso de meses anteriores ou gest
    - A cota atrasada é atualizada para `status = PAGO`, registrando `data_pagamento`, `cota` (principal), `juros_multa` e `valor_pago` efetivo.
    - A baixa é permitida mesmo se o período original da cota estiver `FECHADO`, desde que acionada por usuário com permissão de gestão (síndico/administrador).
    - Com o status `PAGO`, a cota deixa de constar como débito no painel de inadimplência e a unidade torna-se elegível para a **Declaração de Nada Consta**.
-2. **Registro Contábil no Período Aberto (`ReceitaExtra`):**
-   - Caso a cota pertença a um período anterior já `FECHADO` (ou histórico), o sistema cria automaticamente um lançamento de receita no **período de prestação atualmente ABERTO** do condomínio:
-     - Principal da cota: `ReceitaExtra` do tipo `COTA_ATRASADA` com a descrição: *"Recuperação Cota Atrasada - Casa XX - Ref. MM/AAAA"*.
-     - Encargos (se houver): `ReceitaExtra` do tipo `JUROS_MULTA` com a descrição: *"Encargos/Multa/Juros Cota - Casa XX - Ref. MM/AAAA"*.
-   - Caso a cota seja do próprio período que ainda está `ABERTO`, ela apenas computa normalmente na linha regular de cotas do período, sem duplicidade.
+2. **Registro Contábil no Mês do Pagamento (`ReceitaExtra` - Regime de Caixa):**
+   - O sistema identifica automaticamente o **período de prestação correspondente ao mês da Data de Pagamento preenchida na baixa** (`obter_periodo_para_data`):
+     - Caso a cota pertença a um período diferente do mês de recebimento (ex: cotas de meses anteriores com status `PUBLICADO`, `FECHADO` ou retroativas):
+       - Principal da cota: `ReceitaExtra` do tipo `COTA_ATRASADA` com a descrição: *"Recuperação Cota Atrasada - Casa XX - Ref. MM/AAAA"*.
+       - Encargos (se houver): `ReceitaExtra` do tipo `JUROS_MULTA` com a descrição: *"Encargos/Juros/Multa Cota - Casa XX - Ref. MM/AAAA"*.
+     - Caso a cota seja do próprio mês da data de pagamento, o principal já compõe as cotas regulares do período, e apenas os encargos de juros/multa (se houver) são lançados em `ReceitaExtra` do tipo `JUROS_MULTA`.
+   - Essas entradas aparecem instantaneamente na aba **"Receitas Extras & Atrasos"** da tela de Lançamento de Pagamentos do mês em que o dinheiro entrou.
 3. **Dados e Controles da Baixa:**
    - **Data do Pagamento:** Data informada do recebimento (default: data atual).
    - **Valor Pago Efetivo:** Valor digitado pelo síndico, permitindo conceder descontos/isenção nos juros e multas calculados.

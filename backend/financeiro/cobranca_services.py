@@ -469,6 +469,43 @@ def obter_ultima_cota_paga(unidade):
     return None
 
 
+def obter_periodo_para_data(condominio, data_alvo):
+    """
+    Localiza o período de prestação de contas do condomínio correspondente à data informada (regime de caixa).
+    Critérios de busca:
+    1. Intervalo do período: data_inicio_prestacao <= data_alvo <= data_fim_prestacao.
+    2. Pelo mês e ano de mes_referencia (ex: se mes_referencia for novembro/2026 e data_alvo for 14/11/2026).
+    3. Período com status ABERTO mais recente.
+    4. Período mais recente existente no condomínio.
+    """
+    p = PeriodoPrestacao.objects.filter(
+        condominio=condominio,
+        data_inicio_prestacao__lte=data_alvo,
+        data_fim_prestacao__gte=data_alvo
+    ).order_by("-mes_referencia").first()
+    if p:
+        return p
+
+    p = PeriodoPrestacao.objects.filter(
+        condominio=condominio,
+        mes_referencia__year=data_alvo.year,
+        mes_referencia__month=data_alvo.month
+    ).order_by("-mes_referencia").first()
+    if p:
+        return p
+
+    p = PeriodoPrestacao.objects.filter(
+        condominio=condominio,
+        status=PeriodoPrestacao.StatusPeriodo.ABERTO
+    ).order_by("-mes_referencia").first()
+    if p:
+        return p
+
+    return PeriodoPrestacao.objects.filter(
+        condominio=condominio
+    ).order_by("-mes_referencia").first()
+
+
 @transaction.atomic
 def executar_baixa_cota_atrasada(
     cota: ReceitaCota,
@@ -483,9 +520,11 @@ def executar_baixa_cota_atrasada(
     """
     Executa a baixa de uma cota condominial em atraso aplicando a Abordagem A:
     1. Marca a cota original como PAGO para efeito cadastral e liberação de Nada Consta.
-    2. Se o período original da cota estiver FECHADO (ou anterior), lança automaticamente
-       os valores em ReceitaExtra no período ABERTO ativo do condomínio (regime de caixa).
-    3. Registra log de auditoria.
+    2. Localiza o período de prestação correspondente ao mês da DATA DE PAGAMENTO (regime de caixa).
+    3. Se a cota for de período diferente daquele onde o dinheiro entra (meses anteriores,
+       fechados, publicados ou históricos), lança automaticamente em ReceitaExtra (COTA_ATRASADA
+       para o principal e JUROS_MULTA para os encargos).
+    4. Registra log de auditoria.
     """
     if cota.isento:
         raise ValidationError("Cota isenta não permite baixa de pagamento.")
@@ -507,21 +546,20 @@ def executar_baixa_cota_atrasada(
         juros_multa_val = Decimal(str(juros_multa_val))
 
     receitas_extras_criadas = []
-    periodo_aberto = None
 
-    # Se o período da cota estiver FECHADO, cria o registro financeiro no período ABERTO corrente
-    if cota.periodo.status == PeriodoPrestacao.StatusPeriodo.FECHADO:
-        periodo_aberto = PeriodoPrestacao.objects.filter(
-            condominio=cota.periodo.condominio,
-            status=PeriodoPrestacao.StatusPeriodo.ABERTO
-        ).order_by("-mes_referencia").first()
+    # Localiza o período da prestação de contas correspondente ao mês da DATA DE PAGAMENTO
+    periodo_destino = obter_periodo_para_data(cota.periodo.condominio, data_pagamento)
 
-        if periodo_aberto:
-            # 1. Principal em ReceitaExtra COTA_ATRASADA
+    if periodo_destino:
+        obs_extra = f"Baixa cota atrasada #{cota.id}. {observacao}".strip()
+
+        # Caso 1: Cota é de um período diferente daquele em que o pagamento foi realizado
+        # (ex: cota de Setembro ou Outubro recebida em Novembro)
+        if cota.periodo_id != periodo_destino.id:
+            # 1.1 Principal em ReceitaExtra COTA_ATRASADA
             descricao_principal = f"Recuperação Cota Atrasada - {cota.unidade.identificador} - Ref. {cota.periodo.mes_referencia_rotulo}"
-            obs_extra = f"Baixa cota atrasada #{cota.id}. {observacao}".strip()
             re_cota = ReceitaExtra.objects.create(
-                periodo=periodo_aberto,
+                periodo=periodo_destino,
                 tipo=ReceitaExtra.TipoReceitaExtra.COTA_ATRASADA,
                 descricao=descricao_principal,
                 unidade=cota.unidade,
@@ -531,11 +569,25 @@ def executar_baixa_cota_atrasada(
             )
             receitas_extras_criadas.append(re_cota)
 
-            # 2. Encargos (Multa/Juros) em ReceitaExtra JUROS_MULTA
+            # 1.2 Encargos (Multa/Juros) em ReceitaExtra JUROS_MULTA
             if juros_multa_val > Decimal("0.00"):
                 descricao_encargos = f"Encargos/Juros/Multa Cota - {cota.unidade.identificador} - Ref. {cota.periodo.mes_referencia_rotulo}"
                 re_encargos = ReceitaExtra.objects.create(
-                    periodo=periodo_aberto,
+                    periodo=periodo_destino,
+                    tipo=ReceitaExtra.TipoReceitaExtra.JUROS_MULTA,
+                    descricao=descricao_encargos,
+                    unidade=cota.unidade,
+                    valor=juros_multa_val,
+                    data=data_pagamento,
+                    observacao=obs_extra
+                )
+                receitas_extras_criadas.append(re_encargos)
+        else:
+            # Caso 2: Cota é do PRÓPRIO período da data de pagamento, mas foi paga com juros/multa de atraso
+            if juros_multa_val > Decimal("0.00"):
+                descricao_encargos = f"Multa/Juros Cota - {cota.unidade.identificador} - Ref. {cota.periodo.mes_referencia_rotulo}"
+                re_encargos = ReceitaExtra.objects.create(
+                    periodo=periodo_destino,
                     tipo=ReceitaExtra.TipoReceitaExtra.JUROS_MULTA,
                     descricao=descricao_encargos,
                     unidade=cota.unidade,
@@ -579,8 +631,8 @@ def executar_baixa_cota_atrasada(
                 "principal": str(cota_val),
                 "juros_multa": str(juros_multa_val),
                 "data_pagamento": str(data_pagamento),
-                "periodo_origem_fechado": cota.periodo.status == PeriodoPrestacao.StatusPeriodo.FECHADO,
-                "periodo_destino_id": periodo_aberto.id if periodo_aberto else None,
+                "periodo_origem_id": cota.periodo_id,
+                "periodo_destino_id": periodo_destino.id if periodo_destino else None,
                 "observacao": observacao,
             }
         )
@@ -588,6 +640,6 @@ def executar_baixa_cota_atrasada(
     return {
         "cota": cota,
         "receitas_extras": receitas_extras_criadas,
-        "periodo_aberto_id": periodo_aberto.id if periodo_aberto else None
+        "periodo_destino_id": periodo_destino.id if periodo_destino else None
     }
 

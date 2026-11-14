@@ -365,6 +365,44 @@ class BaixaCotasAtrasadasTestCase(TestCase):
         extra_encargos = extras.get(tipo=ReceitaExtra.TipoReceitaExtra.JUROS_MULTA)
         self.assertEqual(extra_encargos.valor, Decimal("35.00"))
 
+    def test_baixa_cota_periodo_publicado_gera_receita_no_mes_do_pagamento(self):
+        from financeiro.cobranca_services import executar_baixa_cota_atrasada
+
+        periodo_publicado = PeriodoPrestacao.objects.create(
+            condominio=self.condominio,
+            mes_referencia=date(2026, 10, 1),
+            mes_referencia_rotulo="OUTUBRO/2026",
+            data_vencimento=date(2026, 10, 5),
+            data_inicio_prestacao=date(2026, 10, 1),
+            data_fim_prestacao=date(2026, 10, 31),
+            valor_cota_padrao=Decimal("380.00"),
+            status=PeriodoPrestacao.StatusPeriodo.PUBLICADO
+        )
+
+        cota_publicada = ReceitaCota.objects.create(
+            periodo=periodo_publicado,
+            unidade=self.unidade,
+            mes_referencia=date(2026, 10, 1),
+            data_vencimento=date(2026, 10, 5),
+            valor_titulo=Decimal("380.00"),
+            status=ReceitaCota.StatusCota.PENDENTE
+        )
+
+        # Baixa realizada com data de pagamento em Novembro/2026
+        res = executar_baixa_cota_atrasada(
+            cota=cota_publicada,
+            data_pagamento=date(2026, 11, 14),
+            valor_pago=Decimal("398.21"),
+            cota_val=Decimal("380.00"),
+            juros_multa_val=Decimal("18.21"),
+            usuario=self.sindico_user
+        )
+
+        self.assertEqual(res["periodo_destino_id"], self.periodo_aberto.id)
+        extras_nov = ReceitaExtra.objects.filter(periodo=self.periodo_aberto, unidade=self.unidade)
+        self.assertTrue(extras_nov.filter(tipo=ReceitaExtra.TipoReceitaExtra.COTA_ATRASADA, valor=Decimal("380.00")).exists())
+        self.assertTrue(extras_nov.filter(tipo=ReceitaExtra.TipoReceitaExtra.JUROS_MULTA, valor=Decimal("18.21")).exists())
+
     def test_api_dar_baixa_atrasada_endpoint(self):
         from rest_framework.test import APIClient
         client = APIClient()

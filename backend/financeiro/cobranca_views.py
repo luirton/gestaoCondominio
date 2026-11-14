@@ -702,9 +702,8 @@ class BaixaCotaAtrasadaView(APIView):
         return Response({
             "message": "Cota baixada com sucesso.",
             "cota": serializer.data,
-            "periodo_origem_fechado": cota.periodo.status == PeriodoPrestacao.StatusPeriodo.FECHADO,
             "receitas_extras_geradas": len(resultado["receitas_extras"]),
-            "periodo_destino_id": resultado["periodo_aberto_id"]
+            "periodo_destino_id": resultado["periodo_destino_id"]
         }, status=status.HTTP_200_OK)
 
 
