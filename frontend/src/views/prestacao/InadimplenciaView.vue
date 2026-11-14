@@ -252,14 +252,39 @@
 
         <!-- Grade de Itens (Tabela Idêntica à Planilha) -->
         <div class="p-6 overflow-y-auto space-y-4">
-          <div class="text-xs text-slate-500 flex justify-between items-center border-b pb-2">
+          <div class="text-xs text-slate-500 flex flex-wrap justify-between items-center gap-2 border-b pb-2">
             <span>Cálculo atualizado até: <b>{{ formatData(unidadeSelecionada.data_atualizacao) }}</b></span>
             <span>Regra de Juros: <b>0,24% ao dia</b> | Multa: <b>R$ 10,00</b></span>
+          </div>
+
+          <!-- Barra de Ações em Lote (quando há cotas marcadas) -->
+          <div v-if="cotasSelecionadasIds.length > 0" class="p-3 bg-blue-50 border border-blue-200 rounded-xl flex items-center justify-between animate-fadeIn">
+            <span class="text-xs font-semibold text-blue-900">
+              ✓ <b>{{ cotasSelecionadasIds.length }}</b> cota(s) selecionada(s) (Total: <b>{{ formatMoeda(totalSelecionadasCalculado) }}</b>)
+            </span>
+            <button
+              @click="abrirModalBaixaLote"
+              class="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold inline-flex items-center gap-1.5 shadow-sm transition"
+            >
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+              </svg>
+              Baixar Cotas Selecionadas
+            </button>
           </div>
 
           <table class="w-full text-left border-collapse text-xs">
             <thead>
               <tr class="bg-blue-900 text-white font-bold">
+                <th class="p-2.5 text-center w-8">
+                  <input
+                    type="checkbox"
+                    :checked="todosSelecionados"
+                    @change="toggleSelecionarTodos"
+                    class="rounded text-blue-600 focus:ring-blue-500 cursor-pointer"
+                    title="Selecionar todas as cotas"
+                  />
+                </th>
                 <th class="p-2.5 text-center">#</th>
                 <th class="p-2.5">Vencimento</th>
                 <th class="p-2.5 text-center">Dias Atraso</th>
@@ -268,10 +293,24 @@
                 <th class="p-2.5 text-right">Juros (R$)</th>
                 <th class="p-2.5 text-right">Total a Pagar</th>
                 <th class="p-2.5">Observação</th>
+                <th class="p-2.5 text-center">Ação</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-slate-200">
-              <tr v-for="it in unidadeSelecionada.itens" :key="it.cota_id" class="hover:bg-slate-50">
+              <tr
+                v-for="it in unidadeSelecionada.itens"
+                :key="it.cota_id"
+                class="hover:bg-slate-50 transition-colors"
+                :class="{ 'bg-blue-50/50': cotasSelecionadasIds.includes(it.cota_id) }"
+              >
+                <td class="p-2.5 text-center">
+                  <input
+                    type="checkbox"
+                    v-model="cotasSelecionadasIds"
+                    :value="it.cota_id"
+                    class="rounded text-blue-600 focus:ring-blue-500 cursor-pointer"
+                  />
+                </td>
                 <td class="p-2.5 text-center font-bold text-slate-600">{{ it.item }}</td>
                 <td class="p-2.5 font-medium text-slate-800">{{ formatData(it.vencimento) }}</td>
                 <td class="p-2.5 text-center text-slate-600">{{ it.dias_atraso }}</td>
@@ -280,16 +319,28 @@
                 <td class="p-2.5 text-right text-slate-700">{{ formatMoeda(it.juros) }}</td>
                 <td class="p-2.5 text-right font-bold text-slate-900">{{ formatMoeda(it.total) }}</td>
                 <td class="p-2.5 text-slate-500 italic">{{ it.observacao || '-' }}</td>
+                <td class="p-2.5 text-center">
+                  <button
+                    @click="abrirModalBaixaIndividual(it)"
+                    class="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md text-[11px] font-semibold inline-flex items-center gap-1 shadow-sm transition"
+                    title="Dar baixa nesta cota em atraso"
+                  >
+                    <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                    </svg>
+                    Baixar
+                  </button>
+                </td>
               </tr>
             </tbody>
             <tfoot>
               <tr class="bg-rose-700 text-white font-bold text-sm">
-                <td colspan="3" class="p-3 text-left">SALDO DEVEDOR CONSOLIDADO</td>
+                <td colspan="4" class="p-3 text-left">SALDO DEVEDOR CONSOLIDADO</td>
                 <td class="p-3 text-right">{{ formatMoeda(unidadeSelecionada.totais.taxa) }}</td>
                 <td class="p-3 text-right">{{ formatMoeda(unidadeSelecionada.totais.multa) }}</td>
                 <td class="p-3 text-right">{{ formatMoeda(unidadeSelecionada.totais.juros) }}</td>
                 <td class="p-3 text-right text-base">{{ formatMoeda(unidadeSelecionada.totais.total_geral) }}</td>
-                <td></td>
+                <td colspan="2"></td>
               </tr>
             </tfoot>
           </table>
@@ -600,6 +651,139 @@
         </div>
       </div>
     </div>
+
+    <!-- MODAL 4: BAIXA DE COTA(S) EM ATRASO -->
+    <div
+      v-if="modalBaixaAberto && unidadeSelecionada"
+      class="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4"
+    >
+      <div class="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden animate-fadeIn">
+        <div class="p-6 bg-slate-900 text-white flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-emerald-600/30 flex items-center justify-center text-emerald-400">
+              <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <div>
+              <h2 class="text-lg font-bold">Dar Baixa em Cota em Atraso</h2>
+              <p class="text-xs text-slate-400">Unidade {{ unidadeSelecionada.unidade.identificador }} - {{ unidadeSelecionada.responsavel.nome }}</p>
+            </div>
+          </div>
+          <button @click="modalBaixaAberto = false" class="text-slate-400 hover:text-white">
+            <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <form @submit.prevent="confirmarBaixa" class="p-6 space-y-4">
+          <!-- Resumo das Cotas que serão baixadas -->
+          <div class="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2 text-xs">
+            <div class="flex justify-between font-semibold text-slate-700">
+              <span>Cotas a liquidar:</span>
+              <span class="text-blue-600 font-bold">{{ cotasParaBaixa.length }} parcela(s)</span>
+            </div>
+            <div class="text-slate-500 max-h-28 overflow-y-auto space-y-1 pr-1 divide-y divide-slate-100">
+              <div v-for="c in cotasParaBaixa" :key="c.cota_id" class="flex justify-between pt-1">
+                <span>Ref. {{ c.periodo_rotulo || formatData(c.vencimento) }} (Principal: {{ formatMoeda(c.taxa) }})</span>
+                <span class="font-bold text-slate-800">{{ formatMoeda(c.total) }}</span>
+              </div>
+            </div>
+            <div class="pt-2 flex justify-between font-bold text-slate-800 border-t border-slate-200">
+              <span>Total Calculado (com Encargos):</span>
+              <span class="text-emerald-700 font-extrabold text-sm">{{ formatMoeda(totalCotasParaBaixa) }}</span>
+            </div>
+          </div>
+
+          <!-- Campos da Baixa -->
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
+              Data do Pagamento *
+            </label>
+            <input
+              v-model="formBaixa.data_pagamento"
+              type="date"
+              required
+              class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            />
+          </div>
+
+          <div>
+            <div class="flex justify-between items-center mb-1">
+              <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider">
+                Valor Efetivamente Pago (R$) *
+              </label>
+              <span class="text-[11px] text-slate-500">Editável se houver desconto</span>
+            </div>
+            <input
+              v-model="formBaixa.valor_pago"
+              type="number"
+              step="0.01"
+              required
+              class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            />
+            <p v-if="parseFloat(formBaixa.valor_pago) < parseFloat(totalCotasParaBaixa)" class="text-[11px] text-amber-600 font-medium mt-1">
+              ⚠️ O valor informado é menor que o total com encargos. O desconto de juros/multa será registrado automaticamente.
+            </p>
+          </div>
+
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
+              Observação / Justificativa
+            </label>
+            <textarea
+              v-model="formBaixa.observacao"
+              rows="2"
+              placeholder="Ex: Pago via PIX conforme acordo com o síndico..."
+              class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            ></textarea>
+          </div>
+
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
+              Comprovante de Pagamento (Opcional)
+            </label>
+            <input
+              type="file"
+              @change="onComprovanteChange"
+              accept="image/*,application/pdf"
+              class="w-full text-xs text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer"
+            />
+          </div>
+
+          <!-- Informação Contábil / Regime de Caixa -->
+          <div class="p-3 bg-emerald-50/70 border border-emerald-200 rounded-xl text-[11px] text-emerald-900 space-y-1">
+            <p class="font-bold flex items-center gap-1">
+              <span>🏛️ Regime de Caixa Automático (Abordagem A):</span>
+            </p>
+            <p>
+              Ao confirmar a baixa, a cota sairá imediatamente da inadimplência e a unidade estará liberada para emissão de certidão de Nada Consta. Caso a cota pertença a um período anterior já fechado, a entrada financeira será computada automaticamente na prestação em aberto atual.
+            </p>
+          </div>
+
+          <div class="pt-3 flex justify-end gap-3 border-t border-slate-200">
+            <button
+              type="button"
+              @click="modalBaixaAberto = false"
+              class="px-4 py-2 border border-slate-300 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              :disabled="salvandoBaixa"
+              class="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-lg text-sm font-medium inline-flex items-center gap-2 shadow-sm transition"
+            >
+              <svg v-if="salvandoBaixa" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              {{ salvandoBaixa ? 'Processando baixa...' : 'Confirmar Baixa' }}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -616,7 +800,19 @@ const filtroCriticidade = ref("TODOS")
 const modalDetalhesAberto = ref(false)
 const modalEmailAberto = ref(false)
 const modalParametrosAberto = ref(false)
+const modalBaixaAberto = ref(false)
 const unidadeSelecionada = ref(null)
+
+// Baixa de Cotas em Atraso
+const cotasSelecionadasIds = ref([])
+const cotasParaBaixa = ref([])
+const salvandoBaixa = ref(false)
+const formBaixa = ref({
+  data_pagamento: "",
+  valor_pago: 0,
+  observacao: "",
+  comprovante: null,
+})
 
 // Envio de E-mail
 const formEmail = ref({
@@ -722,7 +918,125 @@ const getPdfUrl = (unidadeId) => {
 
 const abrirModalDetalhes = (dev) => {
   unidadeSelecionada.value = dev
+  cotasSelecionadasIds.value = []
   modalDetalhesAberto.value = true
+}
+
+const todosSelecionados = computed(() => {
+  const itens = unidadeSelecionada.value?.itens
+  return itens && itens.length > 0 && cotasSelecionadasIds.value.length === itens.length
+})
+
+const totalSelecionadasCalculado = computed(() => {
+  if (!unidadeSelecionada.value?.itens) return 0
+  return unidadeSelecionada.value.itens
+    .filter((it) => cotasSelecionadasIds.value.includes(it.cota_id))
+    .reduce((acc, it) => acc + (parseFloat(it.total) || 0), 0)
+})
+
+const totalCotasParaBaixa = computed(() => {
+  return cotasParaBaixa.value.reduce((acc, c) => acc + (parseFloat(c.total) || 0), 0)
+})
+
+const toggleSelecionarTodos = () => {
+  if (todosSelecionados.value) {
+    cotasSelecionadasIds.value = []
+  } else {
+    cotasSelecionadasIds.value = (unidadeSelecionada.value?.itens || []).map((it) => it.cota_id)
+  }
+}
+
+const abrirModalBaixaIndividual = (it) => {
+  cotasParaBaixa.value = [it]
+  formBaixa.value = {
+    data_pagamento: new Date().toISOString().split("T")[0],
+    valor_pago: parseFloat(it.total),
+    observacao: "",
+    comprovante: null,
+  }
+  modalBaixaAberto.value = true
+}
+
+const abrirModalBaixaLote = () => {
+  if (cotasSelecionadasIds.value.length === 0) return
+  const itens = (unidadeSelecionada.value?.itens || []).filter((it) =>
+    cotasSelecionadasIds.value.includes(it.cota_id)
+  )
+  cotasParaBaixa.value = itens
+  const total = itens.reduce((acc, it) => acc + (parseFloat(it.total) || 0), 0)
+  formBaixa.value = {
+    data_pagamento: new Date().toISOString().split("T")[0],
+    valor_pago: parseFloat(total.toFixed(2)),
+    observacao: "",
+    comprovante: null,
+  }
+  modalBaixaAberto.value = true
+}
+
+const onComprovanteChange = (e) => {
+  formBaixa.value.comprovante = e.target.files[0] || null
+}
+
+const confirmarBaixa = async () => {
+  if (cotasParaBaixa.value.length === 0) return
+  salvandoBaixa.value = true
+
+  try {
+    if (cotasParaBaixa.value.length === 1) {
+      // Baixa Individual
+      const cota = cotasParaBaixa.value[0]
+      let payload
+      if (formBaixa.value.comprovante) {
+        payload = new FormData()
+        payload.append("data_pagamento", formBaixa.value.data_pagamento)
+        payload.append("valor_pago", formBaixa.value.valor_pago)
+        payload.append("observacao", formBaixa.value.observacao || "")
+        payload.append("comprovante", formBaixa.value.comprovante)
+      } else {
+        payload = {
+          data_pagamento: formBaixa.value.data_pagamento,
+          valor_pago: formBaixa.value.valor_pago,
+          observacao: formBaixa.value.observacao,
+        }
+      }
+
+      await financeiroApi.darBaixaCotaAtrasada(cota.cota_id, payload)
+    } else {
+      // Baixa em Lote
+      const payloadLote = {
+        cota_ids: cotasParaBaixa.value.map((c) => c.cota_id),
+        data_pagamento: formBaixa.value.data_pagamento,
+        observacao: formBaixa.value.observacao,
+      }
+      await financeiroApi.darBaixaCotasAtrasadasLote(payloadLote)
+    }
+
+    modalBaixaAberto.value = false
+    cotasSelecionadasIds.value = []
+    alert("✅ Baixa registrada com sucesso! Cota liquidada no sistema.")
+
+    // Atualiza dados
+    const unidadeIdAtual = unidadeSelecionada.value?.unidade?.id
+    await carregarDados()
+
+    if (unidadeIdAtual) {
+      const devedorAtualizado = (relatorio.value?.devedores || []).find(
+        (dev) => dev.unidade.id === unidadeIdAtual
+      )
+      if (devedorAtualizado) {
+        unidadeSelecionada.value = devedorAtualizado
+      } else {
+        modalDetalhesAberto.value = false
+        alert("🎉 Parabéns! Todas as pendências desta unidade foram quitadas. A unidade está 100% adimplente!")
+      }
+    }
+  } catch (err) {
+    console.error("Erro ao registrar baixa:", err)
+    const msg = err.response?.data?.error || err.response?.data?.detail || "Erro ao processar baixa da cota."
+    alert(`Erro ao dar baixa: ${msg}`)
+  } finally {
+    salvandoBaixa.value = false
+  }
 }
 
 const abrirModalEmail = (dev) => {

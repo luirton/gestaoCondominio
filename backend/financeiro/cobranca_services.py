@@ -5,8 +5,16 @@ e consolidação de débitos por unidade condominial.
 
 from decimal import Decimal, ROUND_HALF_UP
 from datetime import date
+from django.db import transaction
 from django.db.models import Q
-from financeiro.models import ReceitaCota, ParametroCobranca
+from django.core.exceptions import ValidationError
+from financeiro.models import (
+    ReceitaCota,
+    ParametroCobranca,
+    ReceitaExtra,
+    PeriodoPrestacao,
+    AuditLog
+)
 from core.models import Unidade, Condominio, VinculoPessoaUnidade, CargoCondominial
 
 
@@ -459,3 +467,127 @@ def obter_ultima_cota_paga(unidade):
             "valor": cota_paga.valor_pago or cota_paga.valor_titulo,
         }
     return None
+
+
+@transaction.atomic
+def executar_baixa_cota_atrasada(
+    cota: ReceitaCota,
+    data_pagamento: date,
+    valor_pago: Decimal,
+    cota_val: Decimal = None,
+    juros_multa_val: Decimal = None,
+    observacao: str = "",
+    comprovante_file=None,
+    usuario=None
+):
+    """
+    Executa a baixa de uma cota condominial em atraso aplicando a Abordagem A:
+    1. Marca a cota original como PAGO para efeito cadastral e liberação de Nada Consta.
+    2. Se o período original da cota estiver FECHADO (ou anterior), lança automaticamente
+       os valores em ReceitaExtra no período ABERTO ativo do condomínio (regime de caixa).
+    3. Registra log de auditoria.
+    """
+    if cota.isento:
+        raise ValidationError("Cota isenta não permite baixa de pagamento.")
+
+    # Se cota_val (principal) não foi especificado, usa o valor original do título
+    if cota_val is None:
+        cota_val = cota.valor_titulo
+
+    cota_val = Decimal(str(cota_val))
+    valor_pago = Decimal(str(valor_pago))
+
+    # Se juros_multa_val não foi informado, calcula a diferença ou 0
+    if juros_multa_val is None:
+        if valor_pago > cota_val:
+            juros_multa_val = valor_pago - cota_val
+        else:
+            juros_multa_val = Decimal("0.00")
+    else:
+        juros_multa_val = Decimal(str(juros_multa_val))
+
+    receitas_extras_criadas = []
+    periodo_aberto = None
+
+    # Se o período da cota estiver FECHADO, cria o registro financeiro no período ABERTO corrente
+    if cota.periodo.status == PeriodoPrestacao.StatusPeriodo.FECHADO:
+        periodo_aberto = PeriodoPrestacao.objects.filter(
+            condominio=cota.periodo.condominio,
+            status=PeriodoPrestacao.StatusPeriodo.ABERTO
+        ).order_by("-mes_referencia").first()
+
+        if periodo_aberto:
+            # 1. Principal em ReceitaExtra COTA_ATRASADA
+            descricao_principal = f"Recuperação Cota Atrasada - {cota.unidade.identificador} - Ref. {cota.periodo.mes_referencia_rotulo}"
+            obs_extra = f"Baixa cota atrasada #{cota.id}. {observacao}".strip()
+            re_cota = ReceitaExtra.objects.create(
+                periodo=periodo_aberto,
+                tipo=ReceitaExtra.TipoReceitaExtra.COTA_ATRASADA,
+                descricao=descricao_principal,
+                unidade=cota.unidade,
+                valor=cota_val,
+                data=data_pagamento,
+                observacao=obs_extra
+            )
+            receitas_extras_criadas.append(re_cota)
+
+            # 2. Encargos (Multa/Juros) em ReceitaExtra JUROS_MULTA
+            if juros_multa_val > Decimal("0.00"):
+                descricao_encargos = f"Encargos/Juros/Multa Cota - {cota.unidade.identificador} - Ref. {cota.periodo.mes_referencia_rotulo}"
+                re_encargos = ReceitaExtra.objects.create(
+                    periodo=periodo_aberto,
+                    tipo=ReceitaExtra.TipoReceitaExtra.JUROS_MULTA,
+                    descricao=descricao_encargos,
+                    unidade=cota.unidade,
+                    valor=juros_multa_val,
+                    data=data_pagamento,
+                    observacao=obs_extra
+                )
+                receitas_extras_criadas.append(re_encargos)
+
+    # Atualiza a cota original
+    cota.data_pagamento = data_pagamento
+    cota.cota = cota_val
+    cota.juros_multa = juros_multa_val
+    cota.valor_pago = valor_pago
+    cota.status = ReceitaCota.StatusCota.PAGO
+
+    if observacao:
+        if cota.observacao and cota.observacao != observacao:
+            cota.observacao = f"{cota.observacao} | {observacao}"
+        else:
+            cota.observacao = observacao
+
+    if comprovante_file:
+        cota.comprovante = comprovante_file
+
+    cota.save()
+
+    # Log de Auditoria
+    if usuario and usuario.is_authenticated:
+        AuditLog.objects.create(
+            usuario=usuario,
+            condominio=cota.periodo.condominio,
+            entidade="ReceitaCota",
+            registro_id=str(cota.id),
+            acao=AuditLog.AcaoAudit.UPDATE,
+            dados_novos={
+                "acao": "BAIXA_COTA_ATRASADA",
+                "cota_id": cota.id,
+                "unidade": cota.unidade.identificador,
+                "valor_pago": str(valor_pago),
+                "principal": str(cota_val),
+                "juros_multa": str(juros_multa_val),
+                "data_pagamento": str(data_pagamento),
+                "periodo_origem_fechado": cota.periodo.status == PeriodoPrestacao.StatusPeriodo.FECHADO,
+                "periodo_destino_id": periodo_aberto.id if periodo_aberto else None,
+                "observacao": observacao,
+            }
+        )
+
+    return {
+        "cota": cota,
+        "receitas_extras": receitas_extras_criadas,
+        "periodo_aberto_id": periodo_aberto.id if periodo_aberto else None
+    }
+

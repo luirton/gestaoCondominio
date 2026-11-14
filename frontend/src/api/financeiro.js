@@ -190,6 +190,15 @@ export const financeiroApi = {
     const base = apiClient.defaults.baseURL || "/api"
     return `${base}/financeiro/nada-consta/${certidaoId}/pdf/`
   },
+
+  // Baixa de Cotas em Atraso (Abordagem A - Regime de Caixa)
+  darBaixaCotaAtrasada(cotaId, data) {
+    const headers = data instanceof FormData ? { "Content-Type": "multipart/form-data" } : {}
+    return apiClient.post(`/financeiro/cotas/${cotaId}/dar-baixa-atrasada/`, data, { headers })
+  },
+  darBaixaCotasAtrasadasLote(data) {
+    return apiClient.post("/financeiro/cotas/dar-baixa-atrasadas-lote/", data)
+  },
 }
 
 export default financeiroApi

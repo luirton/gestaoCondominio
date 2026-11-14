@@ -282,3 +282,151 @@ class FinanceiroCalculosTestCase(TestCase):
         saldo_conta = periodo.saldos_contas.first()
         self.assertEqual(saldo_conta.saldo_anterior, Decimal("0.00"))
         self.assertEqual(saldo_conta.saldo_final, Decimal("0.00"))
+
+
+class BaixaCotasAtrasadasTestCase(TestCase):
+    def setUp(self):
+        self.condominio = Condominio.objects.create(
+            nome="CONDOMÍNIO HORTÊNCIAS III",
+            cnpj="06.275.266/0001-23",
+            cidade="Fortaleza",
+            uf="CE"
+        )
+        self.unidade = Unidade.objects.create(
+            condominio=self.condominio,
+            identificador="Casa 10",
+        )
+        self.sindico_user = Usuario.objects.create_superuser(
+            username="sindico_teste",
+            email="sindico@teste.com",
+            password="senha_segura"
+        )
+
+        # Período histórico FECHADO (Janeiro/2026)
+        self.periodo_fechado = PeriodoPrestacao.objects.create(
+            condominio=self.condominio,
+            mes_referencia=date(2026, 1, 1),
+            mes_referencia_rotulo="JANEIRO/2026",
+            data_vencimento=date(2026, 1, 5),
+            data_inicio_prestacao=date(2026, 1, 1),
+            data_fim_prestacao=date(2026, 1, 31),
+            valor_cota_padrao=Decimal("380.00"),
+            status=PeriodoPrestacao.StatusPeriodo.FECHADO
+        )
+
+        # Cota em atraso no período fechado
+        self.cota_atrasada = ReceitaCota.objects.create(
+            periodo=self.periodo_fechado,
+            unidade=self.unidade,
+            mes_referencia=date(2026, 1, 1),
+            data_vencimento=date(2026, 1, 5),
+            valor_titulo=Decimal("380.00"),
+            status=ReceitaCota.StatusCota.PENDENTE
+        )
+
+        # Período ABERTO atual (Novembro/2026)
+        self.periodo_aberto = PeriodoPrestacao.objects.create(
+            condominio=self.condominio,
+            mes_referencia=date(2026, 11, 1),
+            mes_referencia_rotulo="NOVEMBRO/2026",
+            data_vencimento=date(2026, 11, 5),
+            data_inicio_prestacao=date(2026, 11, 1),
+            data_fim_prestacao=date(2026, 11, 30),
+            valor_cota_padrao=Decimal("380.00"),
+            status=PeriodoPrestacao.StatusPeriodo.ABERTO
+        )
+
+    def test_baixa_cota_periodo_fechado_gera_receita_extra_no_aberto(self):
+        from financeiro.cobranca_services import executar_baixa_cota_atrasada
+
+        res = executar_baixa_cota_atrasada(
+            cota=self.cota_atrasada,
+            data_pagamento=date(2026, 11, 14),
+            valor_pago=Decimal("415.00"),
+            cota_val=Decimal("380.00"),
+            juros_multa_val=Decimal("35.00"),
+            observacao="Pago via PIX com juros",
+            usuario=self.sindico_user
+        )
+
+        self.cota_atrasada.refresh_from_db()
+        self.assertEqual(self.cota_atrasada.status, ReceitaCota.StatusCota.PAGO)
+        self.assertEqual(self.cota_atrasada.data_pagamento, date(2026, 11, 14))
+        self.assertEqual(self.cota_atrasada.valor_pago, Decimal("415.00"))
+
+        # Verifica se gerou as ReceitasExtras no período aberto
+        extras = ReceitaExtra.objects.filter(periodo=self.periodo_aberto)
+        self.assertEqual(extras.count(), 2)
+
+        extra_principal = extras.get(tipo=ReceitaExtra.TipoReceitaExtra.COTA_ATRASADA)
+        self.assertEqual(extra_principal.valor, Decimal("380.00"))
+        self.assertIn("10", extra_principal.descricao)
+
+        extra_encargos = extras.get(tipo=ReceitaExtra.TipoReceitaExtra.JUROS_MULTA)
+        self.assertEqual(extra_encargos.valor, Decimal("35.00"))
+
+    def test_api_dar_baixa_atrasada_endpoint(self):
+        from rest_framework.test import APIClient
+        client = APIClient()
+        client.force_authenticate(user=self.sindico_user)
+
+        url = f"/api/financeiro/cotas/{self.cota_atrasada.id}/dar-baixa-atrasada/"
+        payload = {
+            "data_pagamento": "2026-11-14",
+            "valor_pago": "400.00",
+            "cota": "380.00",
+            "juros_multa": "20.00",
+            "observacao": "Acordo amigável"
+        }
+
+        resp = client.post(url, data=payload, format="json")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data["receitas_extras_geradas"], 2)
+
+        self.cota_atrasada.refresh_from_db()
+        self.assertEqual(self.cota_atrasada.status, ReceitaCota.StatusCota.PAGO)
+        self.assertIn("Acordo amigável", self.cota_atrasada.observacao)
+
+    def test_api_dar_baixa_atrasada_lote_endpoint(self):
+        from rest_framework.test import APIClient
+        client = APIClient()
+        client.force_authenticate(user=self.sindico_user)
+
+        # Período histórico FECHADO 2 (Fevereiro/2026)
+        periodo_fechado_2 = PeriodoPrestacao.objects.create(
+            condominio=self.condominio,
+            mes_referencia=date(2026, 2, 1),
+            mes_referencia_rotulo="FEVEREIRO/2026",
+            data_vencimento=date(2026, 2, 5),
+            data_inicio_prestacao=date(2026, 2, 1),
+            data_fim_prestacao=date(2026, 2, 28),
+            valor_cota_padrao=Decimal("380.00"),
+            status=PeriodoPrestacao.StatusPeriodo.FECHADO
+        )
+
+        cota2 = ReceitaCota.objects.create(
+            periodo=periodo_fechado_2,
+            unidade=self.unidade,
+            mes_referencia=date(2026, 2, 1),
+            data_vencimento=date(2026, 2, 5),
+            valor_titulo=Decimal("380.00"),
+            status=ReceitaCota.StatusCota.PENDENTE
+        )
+
+        url = "/api/financeiro/cotas/dar-baixa-atrasadas-lote/"
+        payload = {
+            "cota_ids": [self.cota_atrasada.id, cota2.id],
+            "data_pagamento": "2026-11-14",
+            "observacao": "Baixa em lote de 2 cotas"
+        }
+
+        resp = client.post(url, data=payload, format="json")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(len(resp.data["cotas_ids"]), 2)
+
+        self.cota_atrasada.refresh_from_db()
+        cota2.refresh_from_db()
+        self.assertEqual(self.cota_atrasada.status, ReceitaCota.StatusCota.PAGO)
+        self.assertEqual(cota2.status, ReceitaCota.StatusCota.PAGO)
+
+

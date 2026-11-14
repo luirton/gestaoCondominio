@@ -24,6 +24,8 @@ from .cobranca_views import (
     ParametroCobrancaViewSet,
     AcordoDescontoCotaViewSet,
     HistoricoNotificacaoCobrancaViewSet,
+    BaixaCotaAtrasadaView,
+    BaixaCotasAtrasadasLoteView,
 )
 
 router = DefaultRouter()
@@ -53,6 +55,10 @@ urlpatterns = [
     path("nada-consta/morador/consolidado/", EmitirNadaConstaConsolidadoMoradorView.as_view(), name="nada-consta-consolidado-morador"),
     path("nada-consta/morador/consolidado/pdf/", DownloadCertidaoNadaConstaConsolidadoPdfView.as_view(), name="nada-consta-consolidado-pdf"),
     path("nada-consta/<int:certidao_id>/pdf/", DownloadCertidaoNadaConstaPdfView.as_view(), name="nada-consta-pdf"),
+
+    # Baixa de Cotas em Atraso (Abordagem A - Regime de Caixa)
+    path("cotas/<int:cota_id>/dar-baixa-atrasada/", BaixaCotaAtrasadaView.as_view(), name="cota-dar-baixa-atrasada"),
+    path("cotas/dar-baixa-atrasadas-lote/", BaixaCotasAtrasadasLoteView.as_view(), name="cotas-dar-baixa-atrasadas-lote"),
 
     path("", include(router.urls)),
 ]

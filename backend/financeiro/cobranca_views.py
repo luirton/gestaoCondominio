@@ -21,13 +21,15 @@ from financeiro.models import (
     AcordoDescontoCota,
     CertidaoNadaConsta,
     HistoricoNotificacaoCobranca,
-    ReceitaCota
+    ReceitaCota,
+    PeriodoPrestacao
 )
 from financeiro.serializers import (
     ParametroCobrancaSerializer,
     AcordoDescontoCotaSerializer,
     CertidaoNadaConstaSerializer,
-    HistoricoNotificacaoCobrancaSerializer
+    HistoricoNotificacaoCobrancaSerializer,
+    ReceitaCotaSerializer
 )
 from financeiro.cobranca_services import (
     obter_extrato_inadimplencia_unidade,
@@ -35,7 +37,9 @@ from financeiro.cobranca_services import (
     obter_responsaveis_unidade,
     obter_relatorio_geral_inadimplencia,
     obter_sindico_ativo,
-    obter_ultima_cota_paga
+    obter_ultima_cota_paga,
+    calcular_encargos_cota,
+    executar_baixa_cota_atrasada
 )
 from financeiro.pdf_services import gerar_pdf_aviso_debito, gerar_pdf_nada_consta, gerar_pdf_nada_consta_lista
 from financeiro.email_services import enviar_email_cobranca
@@ -632,3 +636,149 @@ class HistoricoNotificacaoCobrancaViewSet(viewsets.ReadOnlyModelViewSet):
         if unidade_id:
             qs = qs.filter(unidade_id=unidade_id)
         return qs
+
+
+class BaixaCotaAtrasadaView(APIView):
+    """
+    Dá baixa em uma cota individual em atraso (Abordagem A).
+    POST /api/financeiro/cotas/<int:cota_id>/dar-baixa-atrasada/
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, cota_id):
+        cota = get_object_or_404(ReceitaCota.objects.select_related("periodo", "unidade"), id=cota_id)
+
+        if not usuario_tem_permissao_gestao(request.user, request=request, condominio_id=cota.periodo.condominio_id):
+            return Response(
+                {"error": "Acesso não autorizado para dar baixa em cotas."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        if cota.isento:
+            return Response(
+                {"error": "Cota isenta não permite baixa de pagamento."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        data_pgto_str = request.data.get("data_pagamento")
+        if data_pgto_str:
+            try:
+                data_pgto = date.fromisoformat(str(data_pgto_str)[:10])
+            except ValueError:
+                data_pgto = date.today()
+        else:
+            data_pgto = date.today()
+
+        valor_pago_raw = request.data.get("valor_pago")
+        cota_val_raw = request.data.get("cota")
+        juros_multa_raw = request.data.get("juros_multa")
+
+        cota_val = Decimal(str(cota_val_raw)) if cota_val_raw is not None else cota.valor_titulo
+        if valor_pago_raw is not None:
+            valor_pago = Decimal(str(valor_pago_raw))
+        else:
+            valor_pago = cota_val
+
+        juros_multa_val = Decimal(str(juros_multa_raw)) if juros_multa_raw is not None else None
+
+        observacao = request.data.get("observacao", "")
+        comprovante = request.FILES.get("comprovante")
+
+        try:
+            resultado = executar_baixa_cota_atrasada(
+                cota=cota,
+                data_pagamento=data_pgto,
+                valor_pago=valor_pago,
+                cota_val=cota_val,
+                juros_multa_val=juros_multa_val,
+                observacao=observacao,
+                comprovante_file=comprovante,
+                usuario=request.user
+            )
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+        serializer = ReceitaCotaSerializer(resultado["cota"])
+        return Response({
+            "message": "Cota baixada com sucesso.",
+            "cota": serializer.data,
+            "periodo_origem_fechado": cota.periodo.status == PeriodoPrestacao.StatusPeriodo.FECHADO,
+            "receitas_extras_geradas": len(resultado["receitas_extras"]),
+            "periodo_destino_id": resultado["periodo_aberto_id"]
+        }, status=status.HTTP_200_OK)
+
+
+class BaixaCotasAtrasadasLoteView(APIView):
+    """
+    Dá baixa em múltiplas cotas em atraso em lote (Abordagem A).
+    POST /api/financeiro/cotas/dar-baixa-atrasadas-lote/
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        itens_data = request.data.get("itens")
+        cota_ids = request.data.get("cota_ids", [])
+        data_pgto_str = request.data.get("data_pagamento")
+        obs_geral = request.data.get("observacao", "")
+
+        if data_pgto_str:
+            try:
+                data_pgto = date.fromisoformat(str(data_pgto_str)[:10])
+            except ValueError:
+                data_pgto = date.today()
+        else:
+            data_pgto = date.today()
+
+        if not itens_data and not cota_ids:
+            return Response({"error": "Nenhuma cota informada para baixa."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if itens_data:
+            cota_ids = [it.get("cota_id") for it in itens_data if it.get("cota_id")]
+            itens_map = {it.get("cota_id"): it for it in itens_data}
+        else:
+            itens_map = {}
+
+        cotas = ReceitaCota.objects.filter(id__in=cota_ids).select_related("periodo", "unidade")
+        if not cotas.exists():
+            return Response({"error": "Nenhuma cota válida encontrada."}, status=status.HTTP_404_NOT_FOUND)
+
+        condominio_id = cotas.first().periodo.condominio_id
+        if not usuario_tem_permissao_gestao(request.user, request=request, condominio_id=condominio_id):
+            return Response({"error": "Acesso não autorizado para dar baixa em cotas."}, status=status.HTTP_403_FORBIDDEN)
+
+        atualizadas = 0
+        cotas_processadas = []
+
+        for cota in cotas:
+            if cota.isento:
+                continue
+
+            item_info = itens_map.get(cota.id, {})
+            cota_val = item_info.get("cota", cota.valor_titulo)
+            valor_pago = item_info.get("valor_pago")
+            juros_multa = item_info.get("juros_multa")
+            obs_item = item_info.get("observacao", obs_geral)
+
+            if valor_pago is None:
+                detalhes = calcular_encargos_cota(cota, data_corte=data_pgto)
+                valor_pago = detalhes["total"]
+                cota_val = detalhes["taxa"]
+                juros_multa = detalhes["multa"] + detalhes["juros"]
+
+            executar_baixa_cota_atrasada(
+                cota=cota,
+                data_pagamento=data_pgto,
+                valor_pago=valor_pago,
+                cota_val=cota_val,
+                juros_multa_val=juros_multa,
+                observacao=obs_item,
+                usuario=request.user
+            )
+            atualizadas += 1
+            cotas_processadas.append(cota.id)
+
+        return Response({
+            "message": f"{atualizadas} cotas baixadas com sucesso.",
+            "cotas_ids": cotas_processadas
+        }, status=status.HTTP_200_OK)
+
